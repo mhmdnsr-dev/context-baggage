@@ -48,7 +48,15 @@ golangci-lint run
 
 `golangci-lint` is the repository's additional lint layer. It is not an application runtime dependency and should be installed as a developer or CI tool.
 
-The initial configuration targets the `golangci-lint` v2 series; CI should pin a concrete version such as `v2.3.0` when CI is added.
+The initial configuration targets the `golangci-lint` v2 series; CI pins the `v2.12` minor line.
+
+## Tool version policy
+
+Use the latest stable compatible versions of Go and development tools by default.
+
+The current development and verification toolchain may be newer than the minimum Go version declared in `go.mod`. For example, Context Baggage currently verifies the minimum compatibility lane with Go 1.22.x and the current development lane with Go 1.27.x.
+
+The minimum supported Go version is changed intentionally, not automatically during routine tool upgrades.
 
 ## Build
 
