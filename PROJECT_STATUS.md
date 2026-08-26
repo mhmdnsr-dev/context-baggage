@@ -3,7 +3,7 @@
 Date: 2026-08-26
 
 Phase:
-v0.1.0 implementation complete, pre-release cleanup complete, lint hardening complete, false sync-conflict fix complete, manual A -> B -> A regression validation passed, manual real conflict validation passed, workspace naming/non-Git validation passed, final repository/privacy/Git audit passed, and first-commit staged snapshot review passed.
+v0.1.0 release preparation.
 
 ## Locked Decisions
 
@@ -19,52 +19,33 @@ v0.1.0 implementation complete, pre-release cleanup complete, lint hardening com
 - Advanced synchronization deferred
 - MCP/vector memory/automatic AI memory deferred
 
-## Completed
+## Current Status
 
-- Recreated required `docs/v0.1/` current product contract.
-- Recreated required `project-log/` historical planning structure.
-- Verified all mandatory Phase 0 Markdown artifacts exist.
-- Implemented M0 foundation: Go module, CLI root, app-data resolver, initialization, device identity, baseline status, and tests.
-- Implemented M1 workspace identity: Git root detection, remote normalization, stable workspace IDs, local path registration, sync policy, and tests.
-- Implemented M2 task continuity: task start/status/resume, checkpoints, handoff template, persistence, and tests.
-- Implemented M3 read-only agent discovery for Claude Code and Codex with redaction tests.
-- Implemented M4 folder sync: init/status/push/pull, workspace exclusion, conservative conflict detection, and tests.
-- Implemented M5 release readiness checks: tests, vet, local build, and cross-compilation.
-- Removed project-specific static examples from public documentation.
-- Added pre-release Go development tooling and documentation.
-- Built `./bin/ctx-bag` for manual testing.
-- Fixed all current `golangci-lint` findings without weakening lint configuration.
-- Fixed false sync conflict found during manual A -> B -> A validation.
-- Re-ran the manual A -> B -> A sync validation successfully using isolated `/tmp` state.
-- Verified real two-sided sync divergence is rejected with `CONFLICT DETECTED`.
-- Verified rejected conflicting sync does not overwrite remote state or delete local divergent work.
-- Fixed Git workspace display names so they derive from normalized repository identity rather than the first machine's local folder name.
-- Verified Git-without-remote and non-Git workspace initialization behavior using isolated `/tmp` state.
-- Completed final repository/privacy/Git audit before first commit.
-- Fixed `.gitignore` so `cmd/ctx-bag/main.go` is not accidentally ignored.
-- Redacted personal absolute tool/repository paths from durable public logs/status.
-- Aligned Go module path with `github.com/mhmdnsr-dev/context-baggage`.
-- Verified with Go 1.27.0 through Go toolchain auto-selection.
-- Staged the approved first-commit manifest for human review.
+| Area                        | Status               |
+| --------------------------- | -------------------- |
+| v0.1 implementation         | COMPLETE             |
+| Local verification          | PASS                 |
+| Manual sync validation      | PASS                 |
+| Real conflict validation    | PASS                 |
+| Workspace identity validation | PASS               |
+| Privacy / secret audit      | PASS                 |
+| Public module validation    | PASS                 |
+| GitHub Actions CI           | PASS                 |
 
-## Verification
+## Release State
 
-- `go test ./...` passed.
-- `go vet ./...` passed.
-- `go build ./cmd/ctx-bag` passed on Linux amd64.
-- Cross-compilation passed for Linux amd64, macOS amd64, and Windows amd64.
-- End-to-end two-machine simulation is covered by automated tests.
-- `golangci-lint config verify` passed using the local `golangci-lint` binary.
-- `golangci-lint run` passed with 0 issues using the local `golangci-lint` binary.
-- Regression coverage verifies A push, B pull/checkpoint/push, then unchanged A pull succeeds.
-- Manual validation verifies unchanged Machine A pull now succeeds and repeated pull remains idempotent.
-- Manual real conflict validation: PASS.
-- No silent last-write-wins: VERIFIED.
-- Workspace naming validation: PASS.
-- Non-Git workspace validation: PASS.
-- Final repository/privacy/Git audit: PASS.
-- Final staged snapshot review: PASS.
+```text
+v0.1.0    RELEASE PREPARATION
+```
 
-## Current Next Action
+The first public release is being prepared. An annotated `v0.1.0` tag has not yet been created; this file will not claim a release until the tag and GitHub Release actually exist.
 
-Human review of the staged snapshot before the first commit. Commit and push only after explicit approval.
+## Recent Validation
+
+- Remote CI (`Verify Go 1.22.x`, `Verify Go 1.27.x`, `Lint`) passes.
+- Remote `golangci-lint` fixed to `v2.13.1` for Go 1.27 compatibility.
+- Public `go install github.com/mhmdnsr-dev/context-baggage/cmd/ctx-bag@latest` verified.
+
+## Next Action
+
+Publish `v0.1.0`: tag release commit, push tag, create GitHub Release, then validate the public Go module and `go install @v0.1.0`.

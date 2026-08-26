@@ -173,43 +173,102 @@ No `cmd/` or `internal/` change. No binary, no runtime state, no secrets.
 
 ## Commit
 
-Pending — recorded after commit.
+```bash
+git commit -m "ci: update golangci-lint for Go 1.27"
+```
+
+```text
+[main 7cfd14b] ci: update golangci-lint for Go 1.27
+ 7 files changed, 635 insertions(+), 21 deletions(-)
+ create mode 100644 project-log/sessions/2026-08-26/session-017-github-actions-dispatch-diagnosis.md
+ create mode 100644 project-log/sessions/2026-08-26/session-018-fix-ci-lint-go127-compatibility.md
+```
+
+```text
+LINT_FIX_COMMIT = 7cfd14b1866ac7725712c0a5ca01a85883c02a86
+```
+
+Created normally, no `--amend`, no history rewrite.
 
 ## Push
 
-Pending — recorded after push.
+```bash
+git push origin main
+```
+
+```text
+To github.com:mhmdnsr-dev/context-baggage.git
+   655bff7..7cfd14b  main -> main
+```
+
+No `--force`, no `--force-with-lease`.
 
 ## Remote Run
 
 ### Run ID
 
-Pending — recorded after push.
+```text
+RUN_ID   = 32990928587
+RUN_URL  = https://github.com/mhmdnsr-dev/context-baggage/actions/runs/32990928587
+```
 
 ### Event
 
-Pending — expected `push`.
+```text
+EVENT = push
+```
 
 ### SHA
 
-Pending — expected to equal the fix commit SHA.
+```text
+HEAD_SHA = 7cfd14b1866ac7725712c0a5ca01a85883c02a86
+```
+
+`HEAD_SHA == LINT_FIX_COMMIT` and `EVENT == push` — this is the push-triggered run for the exact fix commit, not a manual dispatch and not an older run. It was dispatched starting `2026-08-26T16:52:49Z`, consistent with the repository's ~16–18 minute push-dispatch latency.
 
 ## Remote Jobs
 
+| Remote Job       | Result   | Evidence       |
+| ---------------- | -------- | -------------- |
+| Verify Go 1.22.x | PASS     | job 98248065427 |
+| Verify Go 1.27.x | PASS     | job 98248065477 |
+| Lint             | PASS     | job 98248065232 |
+
 ### Verify Go 1.22.x
 
-Pending — recorded after run.
+```text
+result           PASS
+actual Go version  go1.22.12 linux/amd64
+Setup log        "Successfully set up Go version 1.22.x" / "go version go1.22.12 linux/amd64"
+```
 
 ### Verify Go 1.27.x
 
-Pending — recorded after run.
+```text
+result           PASS
+actual Go version  go1.27.0 linux/amd64
+Setup log        "Successfully set up Go version 1.27.x" / "go version go1.27.0 linux/amd64"
+```
 
 ### Lint
 
-Pending — recorded after run.
+```text
+result            PASS
+action version    golangci/golangci-lint-action@v9
+resolved lint     golangci-lint 2.13.1 (installed golangci-lint-2.13.1-linux-amd64)
+result line       "0 issues." / "golangci-lint found no issues"
+```
+
+The resolved version is `v2.13.1`, not the previous `v2.12.2`. The Go 1.27 standard-library type-check error no longer occurs.
 
 ## Resolved Remote Tool Versions
 
-Pending — recorded after run.
+```text
+Go minimum lane            go1.22.12
+Go current lane            go1.27.0
+golangci-lint-action       v9
+golangci-lint              v2.13.1
+```
 
 ## Assertions
 
@@ -227,16 +286,16 @@ Pending — recorded after run.
 | Go 1.27 local validation passes            | PASS      | output     |
 | Local lint passes                          | PASS      | 0 issues   |
 | Privacy paths normalized                   | PASS      | sweep      |
-| Commit created normally                    | pending   | after commit |
-| Push used no force                         | pending   | after push |
-| Push-triggered run found for exact commit  | pending   | after run  |
-| Remote Go 1.22 job passes                  | pending   | after run  |
-| Remote Go 1.27 job passes                  | pending   | after run  |
-| Remote Lint job passes                     | pending   | after run  |
-| Actual remote lint version recorded        | pending   | after run  |
-| Entire remote workflow passes              | pending   | after run  |
-| No tag created                             | PASS      | state      |
-| No release created                         | PASS      | state      |
+| Commit created normally                            | PASS      | 7cfd14b (no amend) |
+| Push used no force                                 | PASS      | push output |
+| Push-triggered run found for exact commit          | PASS      | run 32990928587, event=push, SHA=7cfd14b |
+| Remote Go 1.22 job passes                          | PASS      | run 32990928587 |
+| Remote Go 1.27 job passes                          | PASS      | run 32990928587 |
+| Remote Lint job passes                             | PASS      | run 32990928587, 0 issues |
+| Actual remote lint version recorded                | PASS      | v2.13.1 |
+| Entire remote workflow passes                      | PASS      | run 32990928587 |
+| No tag created                                     | PASS      | state      |
+| No release created                                 | PASS      | state      |
 
 ## Findings
 
@@ -246,8 +305,24 @@ Pending — recorded after run.
 
 ## Final Git State
 
-Pending — recorded after push and run inspection.
+```text
+7cfd14b (HEAD -> main, origin/main) ci: update golangci-lint for Go 1.27
+655bff7 Rename workflow from CII to CI
+5882c4d Add workflow_dispatch trigger to CI workflow
+95e5fc5 Rename CI workflow to CII
+f046dd1 ci: add GitHub Actions validation
+95b3dcd feat: implement Context Baggage v0.1
+```
+
+```text
+HEAD        = 7cfd14b1866ac7725712c0a5ca01a85883c02a86
+origin/main = 7cfd14b1866ac7725712c0a5ca01a85883c02a86
+```
+
+`HEAD == origin/main`. This work log (session 018) was committed in its pre-run form and updated after the remote run with the evidence above; that post-commit edit is left uncommitted and will be included in the release-preparation commit. Everything else is clean. No tag, no release, no force push.
 
 ## Conclusion
 
-Pending — recorded after the remote run completes.
+The single CI blocker — `golangci-lint v2.12` being unable to type-check the Go 1.27.0 standard library — is resolved by pinning the officially latest stable `golangci-lint v2.13.1`. The workflow change was exactly one line; triggers, Go lanes, and Action majors were untouched, and no lint rules were weakened. The same remote push-triggered run (`32990928587`, `event = push`, `headSha = 7cfd14b`) passed all three jobs. Dispatch latency still applies to this repository (~16–18 minutes), but dispatch is confirmed functional.
+
+FIRST FULL REMOTE CI VALIDATION: PASS

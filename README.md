@@ -58,9 +58,27 @@ Context Baggage is local-first. It does not automatically upload anything, and i
 
 Cloud-provider integrations are not part of `v0.1`.
 
+## Install
+
+Requires a Go toolchain. Install the latest release:
+
+```bash
+go install github.com/mhmdnsr-dev/context-baggage/cmd/ctx-bag@latest
+```
+
+To install this specific release:
+
+```bash
+go install github.com/mhmdnsr-dev/context-baggage/cmd/ctx-bag@v0.1.0
+```
+
 ## Status
 
-Context Baggage is early and experimental. The `v0.1.0` implementation is complete enough for first manual real-world validation.
+Context Baggage is at its first public release, `v0.1.0`. It is early and experimental.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ## Development
 
