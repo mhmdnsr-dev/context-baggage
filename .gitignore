@@ -1,0 +1,7 @@
+/bin/
+/ctx-bag
+*.test
+coverage.out
+dist/
+.DS_Store
+tmp/
