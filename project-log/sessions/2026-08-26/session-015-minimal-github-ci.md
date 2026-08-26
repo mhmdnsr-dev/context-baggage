@@ -410,8 +410,8 @@ Result: PASS.
 ### Command
 
 ```bash
-/home/nasr/go/bin/golangci-lint config verify
-/home/nasr/go/bin/golangci-lint run
+$HOME/go/bin/golangci-lint config verify
+$HOME/go/bin/golangci-lint run
 ```
 
 ### Output

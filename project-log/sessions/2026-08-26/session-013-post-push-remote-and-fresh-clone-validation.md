@@ -492,16 +492,16 @@ Result: PASS.
 ### Command
 
 ```bash
-command -v golangci-lint || command -v /home/nasr/go/bin/golangci-lint || true
-golangci-lint --version 2>/dev/null || /home/nasr/go/bin/golangci-lint --version 2>/dev/null || true
-GOTOOLCHAIN=go1.27.0 /home/nasr/go/bin/golangci-lint --config /tmp/context-baggage-fresh-clone/.golangci.yml config verify
-cd /tmp/context-baggage-fresh-clone && GOTOOLCHAIN=go1.27.0 /home/nasr/go/bin/golangci-lint run
+command -v golangci-lint || command -v $HOME/go/bin/golangci-lint || true
+golangci-lint --version 2>/dev/null || $HOME/go/bin/golangci-lint --version 2>/dev/null || true
+GOTOOLCHAIN=go1.27.0 $HOME/go/bin/golangci-lint --config /tmp/context-baggage-fresh-clone/.golangci.yml config verify
+cd /tmp/context-baggage-fresh-clone && GOTOOLCHAIN=go1.27.0 $HOME/go/bin/golangci-lint run
 ```
 
 ### Output
 
 ```text
-/home/nasr/go/bin/golangci-lint
+$HOME/go/bin/golangci-lint
 golangci-lint has version 2.13.1 built with go1.27.0 from 6d2288e0 on 2026-08-20T14:28:34Z
 0 issues.
 ```

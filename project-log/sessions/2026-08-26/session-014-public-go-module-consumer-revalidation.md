@@ -118,7 +118,7 @@ Result: PASS — anonymous clone succeeded and matches `REMOTE_HEAD`.
 The first install attempt used an isolated `GOPATH` and `GOBIN`, but `go list -m -json` showed the configured global module cache was still being used:
 
 ```text
-"Dir": "/home/nasr/go/pkg/mod/github.com/mhmdnsr-dev/context-baggage@v0.0.0-20260826140620-95b3dcde8d27"
+"Dir": "$HOME/go/pkg/mod/github.com/mhmdnsr-dev/context-baggage@v0.0.0-20260826140620-95b3dcde8d27"
 ```
 
 That evidence was insufficient for a fully isolated consumer test. The install was rerun after explicitly setting:
