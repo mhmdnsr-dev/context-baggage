@@ -3,7 +3,7 @@
 Date: 2026-08-26
 
 Phase:
-v0.1.0 release preparation.
+v0.1.0 released.
 
 ## Locked Decisions
 
@@ -24,21 +24,23 @@ v0.1.0 release preparation.
 | Area                        | Status               |
 | --------------------------- | -------------------- |
 | v0.1 implementation         | COMPLETE             |
-| Local verification          | PASS                 |
+| Automated verification      | PASS                 |
 | Manual sync validation      | PASS                 |
-| Real conflict validation    | PASS                 |
+| False-conflict regression   | PASS                 |
+| Real-conflict protection    | PASS                 |
 | Workspace identity validation | PASS               |
 | Privacy / secret audit      | PASS                 |
 | Public module validation    | PASS                 |
 | GitHub Actions CI           | PASS                 |
+| v0.1.0 release              | PUBLISHED            |
 
 ## Release State
 
 ```text
-v0.1.0    RELEASE PREPARATION
+v0.1.0    RELEASED
 ```
 
-The first public release is being prepared. An annotated `v0.1.0` tag has not yet been created; this file will not claim a release until the tag and GitHub Release actually exist.
+`v0.1.0` is the first public release. Annotated tag, GitHub Release, public Go module resolution, and `go install @v0.1.0` were all validated.
 
 ## Recent Validation
 
@@ -48,4 +50,4 @@ The first public release is being prepared. An annotated `v0.1.0` tag has not ye
 
 ## Next Action
 
-Publish `v0.1.0`: tag release commit, push tag, create GitHub Release, then validate the public Go module and `go install @v0.1.0`.
+Post-v0.1 direction and v0.2 planning are handled separately.
