@@ -209,8 +209,82 @@ git switch -c chore/verify-main-governance
 
 The changeset is this work log (`session-020`) only.
 
+### Pull Request
+
+```text
+PR #1  https://github.com/mhmdnsr-dev/context-baggage/pull/1
+base   main
+head   chore/verify-main-governance
+```
+
+### PR CI
+
+`pull_request` run `33013607605` — all three required checks pass:
+
+```text
+Verify Go 1.22.x    PASS
+Verify Go 1.27.x    PASS
+Lint                PASS
+```
+
+Merge eligibility: `mergeable = MERGEABLE`, `mergeStateStatus = CLEAN`, `reviewDecision = ""` (0 required approvals). Checks were attached and required before merge.
+
+### Squash Merge
+
+```bash
+gh pr merge 1 --squash --delete-branch
+```
+
+```text
+state      MERGED
+squash commit  94ea7493ffcde2278e36e2a81d4c58521abf72e3
+mergedBy   mhmdnsr-dev (not a bot)
+```
+
+No `--admin`, no `--merge`, no `--rebase`. The squash merge succeeded without bypassing the ruleset.
+
+### Main Post-Merge CI
+
+`push → main` run `33013744104` for `94ea749`:
+
+```text
+Verify Go 1.27.x    PASS
+Verify Go 1.22.x    PASS
+Lint                PASS
+```
+
+Both PR-before-merge CI and post-merge main CI pass.
+
+### Branch Cleanup
+
+```text
+local branch chore/verify-main-governance   deleted
+remote branch chore/verify-main-governance  deleted (via --delete-branch)
+```
+
+### Final Ruleset
+
+```text
+id          = 21597050
+name        = Protect main
+target      = branch
+enforcement = active
+conditions  = refs/heads/main
+rules       = pull_request (squash-only, 0 approvals), required_status_checks
+              (Verify Go 1.22.x, Verify Go 1.27.x, Lint; strict=false),
+              required_linear_history, non_fast_forward, deletion
+```
+
+### Final Repository Settings
+
+```text
+allow_squash_merge   = true
+allow_merge_commit   = false
+allow_rebase_merge   = false
+```
+
 ## Conclusion
 
-Phase A prepared and, after explicit user approval, Phase B activated the `Protect main` ruleset (currently `active`), applied squash-only merge settings, and created the governance test branch. The ruleset enforces: pull request required with 0 approvals and squash-only merges, the three real CI checks, linear history, force-push block, and branch-deletion block — with no bypass actors, no branch lock, no restrict-updates rule, and no mandatory human reviewer. Rollback is a prepared single API PUT.
+Governance was activated, then validated end-to-end through a real short-lived-branch → PR → CI → squash-merge → main → CI lifecycle. The `Protect main` ruleset (`active`) required a pull request with 0 approvals and squash-only merges, required the three real CI checks, required linear history, blocked force pushes and branch deletion, and configured no bypass actors, no branch lock, no restrict-updates rule, no code-owner gate, and no mandatory human reviewer. The test branch push produced no unintended main CI; the PR was mergeable at 0 approvals and merged cleanly without an admin bypass; and main remained linear. Repository merge settings are now squash-only. Rollback remains a prepared single API PUT (`enforcement: active → disabled`).
 
-MAIN BRANCH GOVERNANCE: PASS (pending PR → CI → squash → main → CI validation below)
+MAIN BRANCH GOVERNANCE: PASS

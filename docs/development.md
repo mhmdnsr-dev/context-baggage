@@ -48,7 +48,7 @@ golangci-lint run
 
 `golangci-lint` is the repository's additional lint layer. It is not an application runtime dependency and should be installed as a developer or CI tool.
 
-The initial configuration targets the `golangci-lint` v2 series; CI pins the `v2.12` minor line.
+The initial configuration targets the `golangci-lint` v2 series; CI pins the `v2.13` minor line.
 
 ## Tool version policy
 
@@ -57,6 +57,22 @@ Use the latest stable compatible versions of Go and development tools by default
 The current development and verification toolchain may be newer than the minimum Go version declared in `go.mod`. For example, Context Baggage currently verifies the minimum compatibility lane with Go 1.22.x and the current development lane with Go 1.27.x.
 
 The minimum supported Go version is changed intentionally, not automatically during routine tool upgrades.
+
+## Task completion and work logs
+
+Normal completed tasks should leave the Git working tree clean:
+
+```bash
+git status --short
+```
+
+should produce no output.
+
+Session logs document the work that produced the commit or Pull Request and should normally be complete before the task's final commit. Do not modify committed logs merely to copy GitHub Actions run IDs, timestamps, or job results — GitHub Actions is the authoritative source for remote CI execution.
+
+If post-push evidence is important enough to preserve in the repository, record it later through a separate explicit documentation or validation change using the normal branch → PR → CI → squash-merge workflow.
+
+Normal development happens on a short-lived branch and enters `main` only through a Pull Request; direct commits to `main` are not the default.
 
 ## Build
 
