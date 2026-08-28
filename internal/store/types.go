@@ -27,6 +27,17 @@ type Workspace struct {
 	UpdatedAt  string
 }
 
+// PortableWorkspace is the explicit allowlist of workspace fields that
+// participate in portable shared state. Machine-local fields such as
+// LocalPaths and UpdatedAt are intentionally absent.
+type PortableWorkspace struct {
+	ID        string
+	Name      string
+	Identity  WorkspaceIdentity
+	Sync      bool
+	CreatedAt string
+}
+
 type Task struct {
 	ID          string
 	Name        string
