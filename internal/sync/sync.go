@@ -15,6 +15,43 @@ const (
 	exportDirV2 = "context-baggage-state-v2"
 )
 
+// Namespace describes which sync namespaces are present in a folder.
+type Namespace int
+
+const (
+	NamespaceNone Namespace = iota
+	NamespaceLegacyOnly
+	NamespaceV2Only
+	NamespaceBoth
+)
+
+// NamespaceState detects the presence of the legacy and v2 namespaces.
+func NamespaceState(folder string) (Namespace, error) {
+	legacy, err := pathExists(filepath.Join(folder, exportDir))
+	if err != nil {
+		return NamespaceNone, err
+	}
+	v2, err := pathExists(filepath.Join(folder, exportDirV2))
+	if err != nil {
+		return NamespaceNone, err
+	}
+	switch {
+	case legacy && v2:
+		return NamespaceBoth, nil
+	case legacy:
+		return NamespaceLegacyOnly, nil
+	case v2:
+		return NamespaceV2Only, nil
+	default:
+		return NamespaceNone, nil
+	}
+}
+
+var (
+	errPortableNotFound = errors.New("portable workspace not found")
+	errPortableCorrupt  = errors.New("portable workspace corrupt")
+)
+
 func Init(s store.Store, folder string) (store.SyncState, error) {
 	abs, err := filepath.Abs(folder)
 	if err != nil {
@@ -43,6 +80,13 @@ func Push(s store.Store) (string, error) {
 	if err != nil {
 		return "", errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
 	}
+	state, err := NamespaceState(st.Folder)
+	if err != nil {
+		return "", err
+	}
+	if state == NamespaceLegacyOnly {
+		return "", errors.New("legacy sync state detected\nrun: ctx-bag sync upgrade")
+	}
 	dest := filepath.Join(st.Folder, exportDirV2)
 	if err := os.MkdirAll(st.Folder, 0o700); err != nil {
 		return "", err
@@ -51,9 +95,18 @@ func Push(s store.Store) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	remoteHash, _ := store.HashDir(dest)
+	remoteHash, err := store.HashDir(dest)
+	if err != nil {
+		return "", err
+	}
 	base := sharedBase(st)
-	if hasConflict(base, localHash, remoteHash) {
+	if base == "" {
+		// First-sync safety: with no shared baseline a push may only establish
+		// v2 from an empty or already-equivalent remote state.
+		if remoteHash != "" && localHash != remoteHash {
+			return "", noBaseErr()
+		}
+	} else if hasConflict(base, localHash, remoteHash) {
 		return "", fmt.Errorf("CONFLICT DETECTED\nresource: sync folder\nlocal hash: %s\nincoming hash: %s\nsafe next action: inspect %s before pushing", localHash, remoteHash, dest)
 	}
 	tmp, err := os.MkdirTemp(st.Folder, ".ctx-bag-push-*")
@@ -68,13 +121,7 @@ func Push(s store.Store) (string, error) {
 	if err := buildPortableExport(s, tmp); err != nil {
 		return "", err
 	}
-	if err := os.RemoveAll(dest); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, dest); err != nil {
-		return "", err
-	}
-	hash, err := store.HashDir(dest)
+	hash, err := replaceV2(tmp, dest)
 	if err != nil {
 		return "", err
 	}
@@ -89,6 +136,13 @@ func Pull(s store.Store) (string, error) {
 	st, err := s.ReadSync()
 	if err != nil {
 		return "", errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
+	}
+	state, err := NamespaceState(st.Folder)
+	if err != nil {
+		return "", err
+	}
+	if state == NamespaceLegacyOnly {
+		return "", errors.New("legacy sync state detected\nrun: ctx-bag sync upgrade")
 	}
 	src := filepath.Join(st.Folder, exportDirV2)
 	incomingHash, err := store.HashDir(src)
@@ -105,7 +159,17 @@ func Pull(s store.Store) (string, error) {
 		return "", err
 	}
 	base := sharedBase(st)
-	if hasConflict(base, localHash, incomingHash) {
+	if base == "" {
+		// First-sync safety: with no shared baseline a pull may only import when
+		// the local side is empty or already equals the remote state.
+		localNonEmpty, err := hasEligibleWorkspaces(s)
+		if err != nil {
+			return "", err
+		}
+		if localNonEmpty && localHash != incomingHash {
+			return "", noBaseErr()
+		}
+	} else if hasConflict(base, localHash, incomingHash) {
 		return "", fmt.Errorf("CONFLICT DETECTED\nresource: local store\nlocal hash: %s\nincoming hash: %s\nsafe next action: inspect %s before pulling", localHash, incomingHash, src)
 	}
 	if err := importPortable(s, src); err != nil {
@@ -174,13 +238,18 @@ func buildPortableExport(s store.Store, dest string) error {
 	return nil
 }
 
-// copyProjectedWorkspace writes the portable projection of one workspace. Only
-// the allowlisted portable paths are copied; unknown files are ignored.
+// copyProjectedWorkspace writes the portable projection of one local workspace.
 func copyProjectedWorkspace(srcDir, dstDir string, w store.Workspace) error {
+	return copyPortableWorkspace(srcDir, dstDir, w.Portable())
+}
+
+// copyPortableWorkspace writes the portable projection of one workspace. Only
+// allowlisted portable paths are copied; unknown files are ignored.
+func copyPortableWorkspace(srcDir, dstDir string, p store.PortableWorkspace) error {
 	if err := os.MkdirAll(dstDir, 0o700); err != nil {
 		return err
 	}
-	if err := store.WritePortableWorkspace(dstDir, w.Portable()); err != nil {
+	if err := store.WritePortableWorkspace(dstDir, p); err != nil {
 		return err
 	}
 	if has, err := pathExists(filepath.Join(srcDir, "active-task")); err == nil && has {
@@ -189,6 +258,35 @@ func copyProjectedWorkspace(srcDir, dstDir string, w store.Workspace) error {
 		}
 	}
 	return copyTaskTree(srcDir, dstDir)
+}
+
+// buildPortableExportFromLegacy writes the sanitized v2 projection of a legacy
+// workspace set into dest. The legacy source differs, but the v2 output
+// contract is identical to normal push.
+func buildPortableExportFromLegacy(legacyDir, dest string) error {
+	wsEntries, err := os.ReadDir(filepath.Join(legacyDir, "workspaces"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range wsEntries {
+		if !e.IsDir() {
+			continue
+		}
+		id := e.Name()
+		srcWsDir := filepath.Join(legacyDir, "workspaces", id)
+		p, err := store.ReadPortableWorkspace(srcWsDir)
+		if err != nil {
+			return err
+		}
+		dstWsDir := filepath.Join(dest, "workspaces", id)
+		if err := copyPortableWorkspace(srcWsDir, dstWsDir, p); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // copyTaskTree copies only the allowlisted task filenames from the source
@@ -280,6 +378,142 @@ func importPortable(s store.Store, src string) error {
 		}
 	}
 	return nil
+}
+
+// SyncUpgrade converts a legacy-only shared namespace into a sanitized v2
+// namespace. It is a format conversion only: it never mutates the local
+// canonical store or the sync BASE bookkeeping.
+func SyncUpgrade(s store.Store) error {
+	st, err := s.ReadSync()
+	if err != nil {
+		return errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
+	}
+	state, err := NamespaceState(st.Folder)
+	if err != nil {
+		return err
+	}
+	switch state {
+	case NamespaceV2Only, NamespaceBoth:
+		return errors.New("sync state already uses the v2 format")
+	case NamespaceNone:
+		return errors.New("no shared sync state to upgrade\nrun: ctx-bag sync push")
+	}
+	tmp, err := os.MkdirTemp(st.Folder, ".ctx-bag-upgrade-*")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		// Temporary-directory cleanup is best-effort; it does not change the
+		// result of a completed or failed upgrade.
+		_ = os.RemoveAll(tmp)
+	}()
+	if err := buildPortableExportFromLegacy(filepath.Join(st.Folder, exportDir), tmp); err != nil {
+		return err
+	}
+	dest := filepath.Join(st.Folder, exportDirV2)
+	if _, err := replaceV2(tmp, dest); err != nil {
+		return err
+	}
+	// Format conversion is not a synchronization: leave sync BASE bookkeeping
+	// unchanged until a real sync operation establishes the relationship.
+	return nil
+}
+
+// ListPortableWorkspaces returns the valid portable workspaces from the
+// authoritative v2 namespace, plus entry-level warnings. It is strictly
+// read-only. Directory IDs are validated against workspace.yaml IDs.
+func ListPortableWorkspaces(folder string) ([]store.PortableWorkspace, []string, error) {
+	wsDir := filepath.Join(folder, exportDirV2, "workspaces")
+	entries, err := os.ReadDir(wsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	var out []store.PortableWorkspace
+	var warnings []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dirID := e.Name()
+		wsPath := filepath.Join(wsDir, dirID)
+		p, err := store.ReadPortableWorkspace(wsPath)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("skipping corrupt portable workspace %s: %v", dirID, err))
+			continue
+		}
+		if p.ID == "" {
+			warnings = append(warnings, fmt.Sprintf("skipping portable workspace %s: empty id", dirID))
+			continue
+		}
+		if p.ID != dirID {
+			warnings = append(warnings, fmt.Sprintf("skipping portable workspace %s: id does not match directory name", dirID))
+			continue
+		}
+		out = append(out, p)
+	}
+	return out, warnings, nil
+}
+
+// FindPortableWorkspace returns the portable workspace for an exact ID from the
+// authoritative v2 namespace. It distinguishes not-found, corrupt, and
+// namespace-level read failures.
+func FindPortableWorkspace(folder, id string) (store.PortableWorkspace, error) {
+	wsPath := filepath.Join(folder, exportDirV2, "workspaces", id)
+	has, err := pathExists(wsPath)
+	if err != nil {
+		return store.PortableWorkspace{}, err
+	}
+	if !has {
+		return store.PortableWorkspace{}, fmt.Errorf("%w: %s", errPortableNotFound, id)
+	}
+	p, err := store.ReadPortableWorkspace(wsPath)
+	if err != nil {
+		return store.PortableWorkspace{}, fmt.Errorf("%w: %s (%v)", errPortableCorrupt, id, err)
+	}
+	if p.ID == "" {
+		return store.PortableWorkspace{}, fmt.Errorf("%w: %s (empty id)", errPortableCorrupt, id)
+	}
+	if p.ID != id {
+		return store.PortableWorkspace{}, fmt.Errorf("%w: %s (id does not match directory name)", errPortableCorrupt, id)
+	}
+	return p, nil
+}
+
+// replaceV2 atomically replaces the v2 namespace with a prebuilt temporary
+// tree. The hash is computed before replacement so a hash failure leaves the
+// current authoritative v2 namespace untouched.
+func replaceV2(tmp, dest string) (string, error) {
+	hash, err := store.HashDir(tmp)
+	if err != nil {
+		return "", err
+	}
+	if err := os.RemoveAll(dest); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		return "", err
+	}
+	return hash, nil
+}
+
+func noBaseErr() error {
+	return errors.New("no shared baseline exists\nlocal and shared portable state differ\nautomatic direction cannot be determined safely")
+}
+
+func hasEligibleWorkspaces(s store.Store) (bool, error) {
+	ws, err := s.ListWorkspaces()
+	if err != nil {
+		return false, err
+	}
+	for _, w := range ws {
+		if w.Sync {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func pathExists(path string) (bool, error) {
