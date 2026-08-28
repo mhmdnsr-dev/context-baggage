@@ -174,6 +174,50 @@ func (s Store) WriteWorkspace(w Workspace) error {
 	return AtomicWrite(s.WorkspacePath(w.ID), []byte(strings.Join(lines, "\n")+"\n"), 0o600)
 }
 
+// Portable returns the explicit portable projection of a workspace.
+func (w Workspace) Portable() PortableWorkspace {
+	return PortableWorkspace{ID: w.ID, Name: w.Name, Identity: w.Identity, Sync: w.Sync, CreatedAt: w.CreatedAt}
+}
+
+// ApplyPortable overwrites the portable-authoritative fields from p while
+// keeping machine-local fields from the receiver unchanged.
+func (w Workspace) ApplyPortable(p PortableWorkspace) Workspace {
+	w.ID = p.ID
+	w.Name = p.Name
+	w.Identity = p.Identity
+	w.Sync = p.Sync
+	w.CreatedAt = p.CreatedAt
+	return w
+}
+
+// WritePortableWorkspace writes a projected workspace.yaml into dir. It emits
+// only portable-authoritative fields and never machine-local ones.
+func WritePortableWorkspace(dir string, p PortableWorkspace) error {
+	lines := []string{
+		fmt.Sprintf("id: %s", p.ID),
+		fmt.Sprintf("name: %s", p.Name),
+		"identity:",
+		fmt.Sprintf("  type: %s", p.Identity.Type),
+		fmt.Sprintf("  value: %s", p.Identity.Value),
+		fmt.Sprintf("sync: %t", p.Sync),
+		fmt.Sprintf("createdAt: %s", p.CreatedAt),
+	}
+	return AtomicWrite(filepath.Join(dir, "workspace.yaml"), []byte(strings.Join(lines, "\n")+"\n"), 0o600)
+}
+
+// ReadPortableWorkspace reads a projected workspace.yaml from dir.
+func ReadPortableWorkspace(dir string) (PortableWorkspace, error) {
+	lines, err := readLines(filepath.Join(dir, "workspace.yaml"))
+	if err != nil {
+		return PortableWorkspace{}, err
+	}
+	w, err := parseWorkspace(lines)
+	if err != nil {
+		return PortableWorkspace{}, err
+	}
+	return w.Portable(), nil
+}
+
 func (s Store) ListWorkspaces() ([]Workspace, error) {
 	entries, err := os.ReadDir(filepath.Join(s.Home, "workspaces"))
 	if errors.Is(err, os.ErrNotExist) {

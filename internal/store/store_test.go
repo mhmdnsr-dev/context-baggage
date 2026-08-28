@@ -44,3 +44,38 @@ func TestMalformedWorkspace(t *testing.T) {
 		t.Fatalf("expected malformed workspace error, got %v", err)
 	}
 }
+
+func TestPortableWorkspaceRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	p := PortableWorkspace{
+		ID: "w_shared", Name: "example",
+		Identity:  WorkspaceIdentity{Type: "git-remote", Value: "example.com/org/repo"},
+		Sync:      true,
+		CreatedAt: "2026-01-01T00:00:00Z",
+	}
+	if err := WritePortableWorkspace(dir, p); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadPortableWorkspace(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != p {
+		t.Fatalf("round-trip mismatch: %+v != %+v", got, p)
+	}
+}
+
+func TestApplyPortablePreservesLocalFields(t *testing.T) {
+	w := Workspace{ID: "w_old", Name: "old", LocalPaths: []string{"/machine/foo"}, Sync: false, CreatedAt: "old", UpdatedAt: "u1"}
+	p := PortableWorkspace{ID: "w_target", Name: "target", Identity: WorkspaceIdentity{Type: "local-directory"}, Sync: true, CreatedAt: "2026-01-01T00:00:00Z"}
+	got := w.ApplyPortable(p)
+	if got.ID != "w_target" || got.Name != "target" || !got.Sync || got.CreatedAt != "2026-01-01T00:00:00Z" {
+		t.Fatalf("portable fields not applied: %+v", got)
+	}
+	if len(got.LocalPaths) != 1 || got.LocalPaths[0] != "/machine/foo" {
+		t.Fatalf("LocalPaths not preserved: %+v", got.LocalPaths)
+	}
+	if got.UpdatedAt != "u1" {
+		t.Fatalf("UpdatedAt not preserved: %q", got.UpdatedAt)
+	}
+}
