@@ -208,9 +208,54 @@ func runWorkspace(s store.Store, args []string, out io.Writer) error {
 			rootLabel = "Workspace root"
 		}
 		return writeOutput(out, "Workspace\nName: %s\nID: %s\n%s: %s\nIdentity: %s:%s\nSync: %t\n", w.Name, w.ID, rootLabel, r.Root, w.Identity.Type, w.Identity.Value, w.Sync)
+	case "available":
+		return runWorkspaceAvailable(s, out)
 	default:
 		return fmt.Errorf("unknown workspace subcommand: %s", args[0])
 	}
+}
+
+// runWorkspaceAvailable lists attachable portable workspaces from the
+// authoritative v2 shared state. It is strictly read-only.
+func runWorkspaceAvailable(s store.Store, out io.Writer) error {
+	st, err := s.ReadSync()
+	if err != nil {
+		return errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
+	}
+	state, err := syncer.NamespaceState(st.Folder)
+	if err != nil {
+		return err
+	}
+	if state == syncer.NamespaceLegacyOnly {
+		return writeOutput(out, "Legacy sync state detected.\nrun: ctx-bag sync upgrade\n")
+	}
+	workspaces, warnings, err := syncer.ListPortableWorkspaces(st.Folder)
+	if err != nil {
+		return err
+	}
+	for _, w := range warnings {
+		if err := writeOutput(out, "%s\n", w); err != nil {
+			return err
+		}
+	}
+	var attachable []store.PortableWorkspace
+	for _, p := range workspaces {
+		if p.Identity.Type == "local-directory" || p.Identity.Type == "git-local" {
+			attachable = append(attachable, p)
+		}
+	}
+	if len(attachable) == 0 {
+		return writeOutput(out, "Available portable workspaces: none\n")
+	}
+	if err := writeOutput(out, "Available portable workspaces\n"); err != nil {
+		return err
+	}
+	for _, p := range attachable {
+		if err := writeOutput(out, "%s   %s   %s\n", p.ID, p.Name, p.Identity.Type); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runTask(s store.Store, args []string, out io.Writer) error {
@@ -325,7 +370,28 @@ func runSync(s store.Store, args []string, out io.Writer) error {
 		if err != nil {
 			return errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
 		}
-		return writeOutput(out, "Sync\nFolder: %s\nLast push: %s\nLast pull: %s\n", st.Folder, empty(st.LastPush), empty(st.LastPull))
+		if err := writeOutput(out, "Sync\nFolder: %s\nLast push: %s\nLast pull: %s\n", st.Folder, empty(st.LastPush), empty(st.LastPull)); err != nil {
+			return err
+		}
+		state, err := syncer.NamespaceState(st.Folder)
+		if err != nil {
+			return err
+		}
+		switch state {
+		case syncer.NamespaceLegacyOnly:
+			return writeOutput(out, "Shared format: legacy\nTransition: required\nrun: ctx-bag sync upgrade\n")
+		case syncer.NamespaceV2Only:
+			return writeOutput(out, "Shared format: v2\n")
+		case syncer.NamespaceBoth:
+			return writeOutput(out, "Shared format: v2\nLegacy state: detected / ignored\nUpgrade other devices sharing this folder.\n")
+		default:
+			return writeOutput(out, "Shared format: none\n")
+		}
+	case "upgrade":
+		if err := syncer.SyncUpgrade(s); err != nil {
+			return err
+		}
+		return writeOutput(out, "Shared state upgraded to v2\nLegacy state preserved\nrun: ctx-bag sync pull\nUpgrade other devices sharing this folder.\n")
 	case "push":
 		hash, err := syncer.Push(s)
 		if err != nil {

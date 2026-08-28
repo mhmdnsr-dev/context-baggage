@@ -112,3 +112,24 @@ go mod tidy
 ```
 
 `go.mod` declares the module and dependencies. `go.sum` records dependency checksums when external modules are used. They are useful TypeScript learning anchors, but they are not exactly equivalent to `package.json` and a lock file.
+
+## Sync format v2
+
+The `v0.2` portable sync representation lives in a sibling namespace:
+
+```text
+<sync-folder>/context-baggage-state/       # legacy v0.1 namespace
+<sync-folder>/context-baggage-state-v2/    # v0.2 namespace
+```
+
+Once the v2 namespace exists it is authoritative; legacy state is ignored. `v0.2` never modifies the legacy namespace.
+
+To transition a legacy-only sync folder to v2:
+
+```bash
+ctx-bag sync upgrade
+```
+
+This converts the legacy shared representation to a sanitized v2 projection. It is a format conversion only: the local canonical store and the sync BASE bookkeeping are not changed, and the legacy namespace is preserved. After upgrading, run `ctx-bag sync pull` to import the shared state.
+
+`ctx-bag workspace available` lists attachable portable workspaces (local-directory / git-local) from the authoritative v2 shared state. It is read-only; `ctx-bag workspace attach` is not yet implemented.
