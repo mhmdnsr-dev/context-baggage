@@ -182,6 +182,43 @@ portable/local ownership boundaries
 
 Do not obscure such rules behind generic frameworks.
 
+## Maintainability Guardrails
+
+These gates are guardrails, not design goals. A metric violation is a signal to improve the responsibility boundary or control flow — never a target to game. They run automatically:
+
+- **File size** — enforced by a repository test under `go test ./...`.
+
+```text
+Preferred:   ≤ 300 physical lines
+Review zone: 301–500 lines (question whether multiple responsibilities exist)
+Hard limit:  > 500 lines → CI failure
+```
+
+- **Function length** — enabled via `funlen` in `golangci-lint`.
+
+```text
+lines: 100, statements: 60 (hard threshold)
+Most functions should be substantially below the hard threshold.
+```
+
+- **Cognitive complexity** — enabled via `gocognit` in `golangci-lint`.
+
+```text
+min-complexity: 20
+```
+
+### Metric anti-gaming rule
+
+> Do not split, compress, rename, or abstract code merely to satisfy a metric.
+
+> When a metric reveals a violation, improve the responsibility boundary or control flow.
+
+A metric-driven refactor must make the code easier to understand, not merely make the metric green. Never split a file into arbitrary `part1`/`part2`, extract meaningless one-use helpers, move complexity into poorly named abstractions, compress code to reduce physical lines, or remove useful comments to satisfy a line limit.
+
+### Complexity budget
+
+> A change should not add complexity without buying a concrete current capability, correctness property, or safety property.
+
 ## Refactoring
 
 Do not refactor unrelated code while implementing a feature simply because it could look cleaner. Refactoring should be required for current correctness or small and directly enabling the current change. Large cleanup belongs in a separate task/PR, which keeps reviews small and makes regressions easier to locate.
@@ -202,6 +239,7 @@ Before requesting review:
 [ ] Is unrelated refactoring excluded?
 [ ] Did gofmt/vet/test/build/lint pass?
 [ ] Did I review the diff for secrets, personal paths, and runtime state?
+[ ] Do changes stay within file-size, function-length, and complexity guardrails?
 ```
 
 ## AI Agent Expectations
@@ -223,5 +261,7 @@ preserve privacy/security invariants
 ```
 
 > Generated code is held to the same readability standard as human-written code.
+
+> An AI agent must not perform mechanical metric gaming. If a file or function exceeds a maintainability gate, identify the actual responsibilities, split only at meaningful boundaries, preserve behavior and safety invariants, use descriptive names, and test the refactor.
 
 There is no separate lower standard for AI-generated code.

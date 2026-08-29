@@ -131,30 +131,8 @@ func Attach(s store.Store, cwd string, target store.PortableWorkspace) (store.Wo
 		if w.ID == target.ID {
 			return w, false, nil // already attached; idempotent no-op
 		}
-		// A different existing local workspace may only be adopted when it is
-		// Sync:false and strictly empty (filesystem-conservative).
-		if w.Sync {
-			return store.Workspace{}, false, errors.New("current directory belongs to a sync-enabled workspace that cannot be safely re-attached\nrun: ctx-bag workspace status")
-		}
-		empty, err := s.IsWorkspaceEmpty(w.ID)
-		if err != nil {
+		if err := adoptExistingSource(s, w, r.Root, now); err != nil {
 			return store.Workspace{}, false, err
-		}
-		if !empty {
-			return store.Workspace{}, false, errors.New("current directory belongs to a populated workspace; refusing to attach to another workspace\nsafe next action: resolve existing local context first")
-		}
-		// Remove ONLY the current path from the old workspace first so a crash
-		// never leaves the path owned by two workspace IDs.
-		w.LocalPaths = removeLocalPath(w.LocalPaths, r.Root)
-		if len(w.LocalPaths) == 0 {
-			if err := os.RemoveAll(s.WorkspaceDir(w.ID)); err != nil {
-				return store.Workspace{}, false, err
-			}
-		} else {
-			w.UpdatedAt = now
-			if err := s.WriteWorkspace(w); err != nil {
-				return store.Workspace{}, false, err
-			}
 		}
 	}
 	// Write/update the target workspace with the current path. A newly created
@@ -184,6 +162,27 @@ func Attach(s store.Store, cwd string, target store.PortableWorkspace) (store.Wo
 		return store.Workspace{}, false, err
 	}
 	return t, true, nil
+}
+
+// adoptExistingSource removes the current path from an existing empty Sync:false
+// workspace so that a crash never leaves the path owned by two workspace IDs.
+func adoptExistingSource(s store.Store, w store.Workspace, root, now string) error {
+	if w.Sync {
+		return errors.New("current directory belongs to a sync-enabled workspace that cannot be safely re-attached\nrun: ctx-bag workspace status")
+	}
+	empty, err := s.IsWorkspaceEmpty(w.ID)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		return errors.New("current directory belongs to a populated workspace; refusing to attach to another workspace\nsafe next action: resolve existing local context first")
+	}
+	w.LocalPaths = removeLocalPath(w.LocalPaths, root)
+	if len(w.LocalPaths) == 0 {
+		return os.RemoveAll(s.WorkspaceDir(w.ID))
+	}
+	w.UpdatedAt = now
+	return s.WriteWorkspace(w)
 }
 
 // removeLocalPath returns paths without the given workspace root. It preserves
