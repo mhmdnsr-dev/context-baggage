@@ -19,6 +19,9 @@ func Run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		return printHelp(stdout)
 	}
+	if args[0] == "man" {
+		return runMan(args[1:], stdout)
+	}
 	s, err := config.OpenStore()
 	if err != nil {
 		return err
@@ -108,31 +111,6 @@ func runDiscover(s store.Store, out io.Writer) error {
 		}
 	}
 	return nil
-}
-
-func printHelp(out io.Writer) error {
-	return writeOutput(out, `ctx-bag
-
-Commands:
-  init
-  status
-  doctor
-  discover
-  workspace init [--sync|--no-sync]
-  workspace status
-  workspace available
-  workspace attach <workspace-id>
-  task start <name>
-  task status
-  task resume <name>
-  checkpoint -m <message>
-  handoff
-  sync init <folder>
-  sync status
-  sync upgrade
-  sync push
-  sync pull
-`)
 }
 
 func writeOutput(out io.Writer, format string, args ...any) error {
