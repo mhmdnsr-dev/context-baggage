@@ -123,6 +123,7 @@ func runStatus(s store.Store, out io.Writer) error {
 
 func runDoctor(s store.Store, out io.Writer) error {
 	var problems []string
+	var warnings []string
 	if _, err := os.Stat(s.Home); err != nil {
 		problems = append(problems, "application home is inaccessible: "+err.Error())
 	}
@@ -137,18 +138,113 @@ func runDoctor(s store.Store, out io.Writer) error {
 			problems = append(problems, "configured sync folder is unavailable: "+st.Folder)
 		}
 	}
-	if len(problems) == 0 {
-		return writeOutput(out, "Doctor: OK\n")
+	// Duplicate LocalPath ownership is a real resolver-integrity error: the
+	// workspace resolver returns the first LocalPath match, so ambiguity makes
+	// resolution order-dependent.
+	for _, dup := range duplicateLocalPaths(s) {
+		problems = append(problems, "duplicate LocalPath ownership: "+dup)
 	}
-	if err := writeOutput(out, "Doctor: problems found\n"); err != nil {
-		return err
-	}
-	for _, p := range problems {
-		if err := writeOutput(out, "- %s\n", p); err != nil {
-			return err
+	// An observed Git identity that differs (or collides) is reported, never
+	// reconciled: the established local binding remains authoritative.
+	if w, r, err := workspace.Current(s, mustCwd()); err == nil {
+		if warn := gitIdentityWarning(s, w, r); warn != "" {
+			warnings = append(warnings, warn)
 		}
 	}
-	return errors.New("doctor found problems")
+	if len(problems) > 0 {
+		if err := writeOutput(out, "Doctor: problems found\n"); err != nil {
+			return err
+		}
+		for _, p := range problems {
+			if err := writeOutput(out, "- %s\n", p); err != nil {
+				return err
+			}
+		}
+		return errors.New("doctor found problems")
+	}
+	if len(warnings) > 0 {
+		for _, w := range warnings {
+			if err := writeOutput(out, "%s\n", w); err != nil {
+				return err
+			}
+		}
+		return writeOutput(out, "Doctor: OK (warnings)\n")
+	}
+	return writeOutput(out, "Doctor: OK\n")
+}
+
+// gitIdentityWarning reports a live observed Git identity that differs from the
+// established workspace. It returns an empty string when there is nothing to
+// report. It never reconciles or re-keys.
+func gitIdentityWarning(s store.Store, w store.Workspace, r workspace.Resolved) string {
+	if r.ID == "" || r.ID == w.ID {
+		return ""
+	}
+	if canonicalWorkspaceExists(s, r.ID, w.ID) {
+		return "Warning: observed Git identity conflicts with another canonical workspace\n" +
+			"Established workspace: " + w.ID + "\n" +
+			"Observed Git workspace: " + r.ID + "\n" +
+			"The established local binding remains authoritative.\n" +
+			"No automatic reconciliation was performed.\n"
+	}
+	return "Warning: observed Git identity differs from established workspace\n" +
+		"Established workspace: " + w.ID + "\n" +
+		"Observed Git workspace: " + r.ID + "\n"
+}
+
+// canonicalWorkspaceExists reports whether another canonical workspace with the
+// given ID is known, either in the local store or authoritative v2. Legacy is
+// never inspected as canonical evidence.
+func canonicalWorkspaceExists(s store.Store, id, exclude string) bool {
+	if ws, err := s.ListWorkspaces(); err == nil {
+		for _, w := range ws {
+			if w.ID == id && w.ID != exclude {
+				return true
+			}
+		}
+	}
+	if st, err := s.ReadSync(); err == nil && st.Folder != "" {
+		if state, err := syncer.NamespaceState(st.Folder); err == nil && (state == syncer.NamespaceV2Only || state == syncer.NamespaceBoth) {
+			if p, err := syncer.FindPortableWorkspace(st.Folder, id); err == nil && p.ID == id {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// duplicateLocalPaths returns human-readable lines for any LocalPath that is
+// owned by more than one workspace record. Paths are compared using the same
+// absolute+clean semantics the resolver and attachment use.
+func duplicateLocalPaths(s store.Store) []string {
+	workspaces, err := s.ListWorkspaces()
+	if err != nil {
+		return nil
+	}
+	seen := map[string]string{}
+	var out []string
+	for _, w := range workspaces {
+		for _, p := range w.LocalPaths {
+			key := normalizeLocalPath(p)
+			if key == "" {
+				continue
+			}
+			if first, ok := seen[key]; ok {
+				out = append(out, fmt.Sprintf("path %s is owned by multiple workspaces: %s, %s", p, first, w.ID))
+			} else {
+				seen[key] = w.ID
+			}
+		}
+	}
+	return out
+}
+
+func normalizeLocalPath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return ""
+	}
+	return filepath.Clean(abs)
 }
 
 func runDiscover(s store.Store, out io.Writer) error {
@@ -207,7 +303,15 @@ func runWorkspace(s store.Store, args []string, out io.Writer) error {
 		if w.Identity.Type == "local-directory" {
 			rootLabel = "Workspace root"
 		}
-		return writeOutput(out, "Workspace\nName: %s\nID: %s\n%s: %s\nIdentity: %s:%s\nSync: %t\n", w.Name, w.ID, rootLabel, r.Root, w.Identity.Type, w.Identity.Value, w.Sync)
+		if err := writeOutput(out, "Workspace\nName: %s\nID: %s\n%s: %s\nIdentity: %s:%s\nSync: %t\n", w.Name, w.ID, rootLabel, r.Root, w.Identity.Type, w.Identity.Value, w.Sync); err != nil {
+			return err
+		}
+		if r.ID != "" && r.ID != w.ID {
+			if err := writeOutput(out, "Observed Git ID: %s\nGit identity: differs from established workspace\n", r.ID); err != nil {
+				return err
+			}
+		}
+		return nil
 	case "available":
 		return runWorkspaceAvailable(s, out)
 	case "attach":
@@ -458,6 +562,8 @@ Commands:
   discover
   workspace init [--sync|--no-sync]
   workspace status
+  workspace available
+  workspace attach <workspace-id>
   task start <name>
   task status
   task resume <name>
@@ -465,6 +571,7 @@ Commands:
   handoff
   sync init <folder>
   sync status
+  sync upgrade
   sync push
   sync pull
 `)
