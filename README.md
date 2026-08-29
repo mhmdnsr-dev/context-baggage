@@ -104,7 +104,7 @@ go install github.com/mhmdnsr-dev/context-baggage/cmd/ctx-bag@v0.1.0
 
 ## Status
 
-Context Baggage is at its first public release, `v0.1.0`. It is early and experimental.
+Context Baggage is at release `v0.2.0`. It is early and experimental; the interface may continue to evolve before `v1.0.0`.
 
 ## License
 
