@@ -114,6 +114,8 @@ MIT — see [LICENSE](LICENSE).
 
 See [docs/development.md](docs/development.md) for the local Go workflow, linting, and build commands. See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and code-quality expectations.
 
+CLI documentation is built into the binary: `ctx-bag --help` for command discovery, and `ctx-bag man` / `ctx-bag man <command>` for detailed, version-matched documentation.
+
 ## Roadmap
 
 - M0: foundation, initialization, device identity, baseline status;
