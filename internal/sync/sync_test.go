@@ -949,3 +949,48 @@ func TestDiscoveryIsReadOnly(t *testing.T) {
 		t.Fatalf("discovery modified v2 namespace")
 	}
 }
+
+func TestPullPreflightNoPartialImport(t *testing.T) {
+	folder := t.TempDir()
+	// Remote export with both w_A (safe) and w_B.
+	producer := store.New(t.TempDir())
+	if err := producer.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Init(producer, folder); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"w_A", "w_B"} {
+		if err := producer.WriteWorkspace(store.Workspace{ID: id, Name: id, Sync: true, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-02T00:00:00Z"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Push(producer); err != nil {
+		t.Fatal(err)
+	}
+	// Local staged w_B (Sync:false) with unshared local context.
+	local := store.New(t.TempDir())
+	if err := local.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Init(local, folder); err != nil {
+		t.Fatal(err)
+	}
+	if err := local.WriteWorkspace(store.Workspace{ID: "w_B", Name: "b", Sync: false, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := local.WriteTask(store.Task{ID: "t_local", Name: "local", WorkspaceID: "w_B", Status: "active", CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Pull(local); err == nil || !strings.Contains(err.Error(), "unshared local context") {
+		t.Fatalf("expected preflight refusal, got %v", err)
+	}
+	// w_A must NOT be imported (no partial import).
+	if _, err := local.ReadWorkspace("w_A"); err == nil {
+		t.Fatalf("w_A imported despite preflight refusal")
+	}
+	// Local w_B context intact.
+	if _, err := local.ReadTask("w_B", "t_local"); err != nil {
+		t.Fatalf("local context lost: %v", err)
+	}
+}

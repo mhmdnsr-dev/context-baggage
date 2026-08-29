@@ -172,6 +172,9 @@ func Pull(s store.Store) (string, error) {
 	} else if hasConflict(base, localHash, incomingHash) {
 		return "", fmt.Errorf("CONFLICT DETECTED\nresource: local store\nlocal hash: %s\nincoming hash: %s\nsafe next action: inspect %s before pulling", localHash, incomingHash, src)
 	}
+	if err := preflightPortable(s, src); err != nil {
+		return "", err
+	}
 	if err := importPortable(s, src); err != nil {
 		return "", err
 	}
@@ -315,6 +318,41 @@ func copyTaskTree(srcWsDir, dstWsDir string) error {
 					return err
 				}
 			}
+		}
+	}
+	return nil
+}
+
+// preflightPortable validates all incoming portable workspace IDs before any
+// import mutation. It refuses to overwrite a locally staged (Sync:false)
+// workspace that has accumulated unshared local context.
+func preflightPortable(s store.Store, src string) error {
+	wsDir := filepath.Join(src, "workspaces")
+	entries, err := os.ReadDir(wsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		id := e.Name()
+		w, err := s.ReadWorkspace(id)
+		if err != nil {
+			continue // no local record; nothing stale to protect
+		}
+		if w.Sync {
+			continue // sync-enabled: the normal conflict model governs
+		}
+		empty, err := s.IsWorkspaceEmpty(id)
+		if err != nil {
+			return err
+		}
+		if !empty {
+			return fmt.Errorf("local workspace %s has unshared local context\nrefusing to overwrite it\nsafe next action: resolve the local context before pulling", id)
 		}
 	}
 	return nil
@@ -514,6 +552,13 @@ func hasEligibleWorkspaces(s store.Store) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// IsAttachable reports whether a portable workspace identity type is an
+// explicit attachment target. Git-remote workspaces already have deterministic
+// Git-derived identity and are never explicit attachment targets.
+func IsAttachable(t store.WorkspaceIdentity) bool {
+	return t.Type == "local-directory" || t.Type == "git-local"
 }
 
 func pathExists(path string) (bool, error) {

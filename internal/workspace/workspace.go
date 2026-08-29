@@ -1,8 +1,10 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -73,10 +75,11 @@ func Init(s store.Store, cwd string, syncPreference *bool) (store.Workspace, err
 				return store.Workspace{}, fmt.Errorf("generate workspace id: %w", err)
 			}
 		}
-		w = store.Workspace{ID: id, Sync: false, CreatedAt: now}
+		w = store.Workspace{ID: id, Name: r.Name, Identity: r.Identity, Sync: false, CreatedAt: now}
 	}
-	w.Name = r.Name
-	w.Identity = r.Identity
+	// When found through an established local binding, the established canonical
+	// ID, Name, and Identity are preserved even if Git now derives different
+	// metadata. Only a fresh workspace adopts the resolved identity.
 	w.UpdatedAt = now
 	if !containsPath(w.LocalPaths, r.Root) {
 		w.LocalPaths = append(w.LocalPaths, r.Root)
@@ -105,7 +108,103 @@ func Current(s store.Store, cwd string) (store.Workspace, Resolved, error) {
 	return w, r, nil
 }
 
+// Attach binds the current local directory to an existing canonical portable
+// workspace. It is an identity/local-attachment operation only: it never pulls,
+// pushes, edits shared state, or copies portable continuity. A newly created
+// attachment is staged Sync:false so the first sync pull can import the shared
+// portable state safely without colliding with the no-BASE pull guard. The
+// second return value is false for an idempotent no-op (already attached).
+func Attach(s store.Store, cwd string, target store.PortableWorkspace) (store.Workspace, bool, error) {
+	r, err := Resolve(cwd)
+	if err != nil {
+		return store.Workspace{}, false, err
+	}
+	if r.ID != "" {
+		return store.Workspace{}, false, errors.New("current directory has deterministic Git identity; explicit attach is not allowed\nrun: ctx-bag workspace status")
+	}
+	now := store.Now()
+	w, found, err := existingWorkspace(s, r)
+	if err != nil {
+		return store.Workspace{}, false, err
+	}
+	if found {
+		if w.ID == target.ID {
+			return w, false, nil // already attached; idempotent no-op
+		}
+		// A different existing local workspace may only be adopted when it is
+		// Sync:false and strictly empty (filesystem-conservative).
+		if w.Sync {
+			return store.Workspace{}, false, errors.New("current directory belongs to a sync-enabled workspace that cannot be safely re-attached\nrun: ctx-bag workspace status")
+		}
+		empty, err := s.IsWorkspaceEmpty(w.ID)
+		if err != nil {
+			return store.Workspace{}, false, err
+		}
+		if !empty {
+			return store.Workspace{}, false, errors.New("current directory belongs to a populated workspace; refusing to attach to another workspace\nsafe next action: resolve existing local context first")
+		}
+		// Remove ONLY the current path from the old workspace first so a crash
+		// never leaves the path owned by two workspace IDs.
+		w.LocalPaths = removeLocalPath(w.LocalPaths, r.Root)
+		if len(w.LocalPaths) == 0 {
+			if err := os.RemoveAll(s.WorkspaceDir(w.ID)); err != nil {
+				return store.Workspace{}, false, err
+			}
+		} else {
+			w.UpdatedAt = now
+			if err := s.WriteWorkspace(w); err != nil {
+				return store.Workspace{}, false, err
+			}
+		}
+	}
+	// Write/update the target workspace with the current path. A newly created
+	// target is staged Sync:false; an existing target keeps its own Sync.
+	t, err := s.ReadWorkspace(target.ID)
+	if err != nil {
+		t = store.Workspace{ID: target.ID, Name: target.Name, Identity: target.Identity, CreatedAt: target.CreatedAt, Sync: false}
+	} else {
+		if !t.Sync {
+			empty, err := s.IsWorkspaceEmpty(t.ID)
+			if err != nil {
+				return store.Workspace{}, false, err
+			}
+			if !empty {
+				return store.Workspace{}, false, errors.New("target workspace already contains unshared local context; refusing to attach another path\nsafe next action: pull or resolve the target before attaching")
+			}
+		}
+		t.Name = target.Name
+		t.Identity = target.Identity
+		t.CreatedAt = target.CreatedAt
+	}
+	if !containsPath(t.LocalPaths, r.Root) {
+		t.LocalPaths = append(t.LocalPaths, r.Root)
+	}
+	t.UpdatedAt = now
+	if err := s.WriteWorkspace(t); err != nil {
+		return store.Workspace{}, false, err
+	}
+	return t, true, nil
+}
+
+func removeLocalPath(paths []string, path string) []string {
+	var out []string
+	for _, p := range paths {
+		if !containsPath([]string{p}, path) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func existingWorkspace(s store.Store, r Resolved) (store.Workspace, bool, error) {
+	// An established local-path binding is authoritative for that path on this
+	// machine. Prefer it over any Git-derived identity so a workspace does not
+	// silently re-key if a Git remote appears (or changes) later.
+	if w, found, err := workspaceByLocalPath(s, r.Root); err != nil {
+		return store.Workspace{}, false, err
+	} else if found {
+		return w, true, nil
+	}
 	if r.ID != "" {
 		w, err := s.ReadWorkspace(r.ID)
 		if err != nil {
@@ -113,7 +212,7 @@ func existingWorkspace(s store.Store, r Resolved) (store.Workspace, bool, error)
 		}
 		return w, true, nil
 	}
-	return workspaceByLocalPath(s, r.Root)
+	return store.Workspace{}, false, nil
 }
 
 func workspaceByLocalPath(s store.Store, root string) (store.Workspace, bool, error) {

@@ -210,9 +210,48 @@ func runWorkspace(s store.Store, args []string, out io.Writer) error {
 		return writeOutput(out, "Workspace\nName: %s\nID: %s\n%s: %s\nIdentity: %s:%s\nSync: %t\n", w.Name, w.ID, rootLabel, r.Root, w.Identity.Type, w.Identity.Value, w.Sync)
 	case "available":
 		return runWorkspaceAvailable(s, out)
+	case "attach":
+		if len(args) < 2 {
+			return errors.New("workspace id is required\nrun: ctx-bag workspace attach <id>")
+		}
+		return runWorkspaceAttach(s, args[1], out)
 	default:
 		return fmt.Errorf("unknown workspace subcommand: %s", args[0])
 	}
+}
+
+// runWorkspaceAttach binds the current directory to an existing canonical
+// portable workspace. It is an identity/local-attachment operation only.
+func runWorkspaceAttach(s store.Store, arg string, out io.Writer) error {
+	st, err := s.ReadSync()
+	if err != nil {
+		return errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
+	}
+	state, err := syncer.NamespaceState(st.Folder)
+	if err != nil {
+		return err
+	}
+	switch state {
+	case syncer.NamespaceLegacyOnly:
+		return errors.New("legacy sync state detected\nrun: ctx-bag sync upgrade")
+	case syncer.NamespaceNone:
+		return fmt.Errorf("portable workspace %s not found", arg)
+	}
+	target, err := syncer.FindPortableWorkspace(st.Folder, arg)
+	if err != nil {
+		return err
+	}
+	if !syncer.IsAttachable(target.Identity) {
+		return fmt.Errorf("workspace %s is not attachable (identity: %s)", target.ID, target.Identity.Type)
+	}
+	w, changed, err := workspace.Attach(s, mustCwd(), target)
+	if err != nil {
+		return err
+	}
+	if changed {
+		return writeOutput(out, "Attached workspace: %s\nPath: %s\nrun: ctx-bag sync pull\n", w.ID, mustCwd())
+	}
+	return writeOutput(out, "already attached to workspace %s\n", w.ID)
 }
 
 // runWorkspaceAvailable lists attachable portable workspaces from the
@@ -240,7 +279,7 @@ func runWorkspaceAvailable(s store.Store, out io.Writer) error {
 	}
 	var attachable []store.PortableWorkspace
 	for _, p := range workspaces {
-		if p.Identity.Type == "local-directory" || p.Identity.Type == "git-local" {
+		if syncer.IsAttachable(p.Identity) {
 			attachable = append(attachable, p)
 		}
 	}
