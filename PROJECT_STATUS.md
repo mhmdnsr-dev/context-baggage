@@ -3,7 +3,7 @@
 Date: 2026-08-26
 
 Phase:
-v0.2 implementation complete; release validation pending.
+v0.2.0 released.
 
 ## Locked Decisions
 
@@ -41,10 +41,10 @@ v0.2 implementation complete; release validation pending.
 
 ```text
 v0.1.0    RELEASED
-v0.2.0    RELEASE VALIDATION PENDING   (not yet tagged or released)
+v0.2.0    RELEASED
 ```
 
-`v0.1.0` is the first public release. `v0.2.0` implements explicit cross-machine workspace attachment for non-Git / Git-without-remote workspaces, legacy sync-format transition, and workspace discovery; release publication is a separate reviewed step.
+`v0.1.0` is the first public release. `v0.2.0` is the second public release: it adds explicit cross-machine workspace attachment for non-Git / Git-without-remote workspaces, legacy sync-format transition, and portable workspace discovery.
 
 ## Recent Validation
 
@@ -53,7 +53,8 @@ v0.2.0    RELEASE VALIDATION PENDING   (not yet tagged or released)
 - Public `go install github.com/mhmdnsr-dev/context-baggage/cmd/ctx-bag@latest` verified.
 - Non-Git and Git-no-remote cross-machine attachment flows validated end-to-end.
 - Legacy `sync upgrade` → attach → pull flow validated.
+- Annotated `v0.2.0` tag and GitHub Release published; public Go module resolution and `go install @v0.2.0` verified.
 
 ## Next Action
 
-Final review, then tag and publish `v0.2.0` as a separate release action.
+Review and plan the post-v0.2 direction (potential `v0.3`) as a separate planning task.
