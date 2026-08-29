@@ -174,8 +174,8 @@ func runDoctor(s store.Store, out io.Writer) error {
 }
 
 // gitIdentityWarning reports a live observed Git identity that differs from the
-// established workspace. It returns an empty string when there is nothing to
-// report. It never reconciles or re-keys.
+// established workspace binding. It returns an empty string when there is
+// nothing to report. It never reconciles or re-keys; it is diagnostic only.
 func gitIdentityWarning(s store.Store, w store.Workspace, r workspace.Resolved) string {
 	if r.ID == "" || r.ID == w.ID {
 		return ""
@@ -194,7 +194,7 @@ func gitIdentityWarning(s store.Store, w store.Workspace, r workspace.Resolved) 
 
 // canonicalWorkspaceExists reports whether another canonical workspace with the
 // given ID is known, either in the local store or authoritative v2. Legacy is
-// never inspected as canonical evidence.
+// never inspected as canonical evidence, per the v2 namespace authority rule.
 func canonicalWorkspaceExists(s store.Store, id, exclude string) bool {
 	if ws, err := s.ListWorkspaces(); err == nil {
 		for _, w := range ws {
@@ -239,6 +239,9 @@ func duplicateLocalPaths(s store.Store) []string {
 	return out
 }
 
+// normalizeLocalPath returns the absolute, cleaned form of a local path using
+// the same comparison semantics the workspace resolver and attachment use.
+// It intentionally does not resolve symlinks.
 func normalizeLocalPath(p string) string {
 	abs, err := filepath.Abs(p)
 	if err != nil {

@@ -112,7 +112,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Development
 
-See [docs/development.md](docs/development.md) for the local Go workflow, linting, and build commands.
+See [docs/development.md](docs/development.md) for the local Go workflow, linting, and build commands. See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and code-quality expectations.
 
 ## Roadmap
 
