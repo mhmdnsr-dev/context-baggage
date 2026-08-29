@@ -52,6 +52,36 @@ ctx-bag workspace status
 ctx-bag task resume <task-name>
 ```
 
+Carrying context across machines for a repository with a usable Git remote happens automatically: the same normalized remote resolves to the same workspace on any machine, so no extra setup is needed.
+
+### v0.2: non-Git and Git-without-remote workspaces
+
+Workspaces that have no usable Git remote (a plain folder, or a Git repository without a remote) do not carry a portable identity by default. `v0.2` adds explicit attachment:
+
+Machine A:
+
+```bash
+ctx-bag init
+ctx-bag sync init <shared-folder>
+ctx-bag workspace init --sync
+ctx-bag task start <task-name>
+ctx-bag checkpoint -m "<checkpoint-message>"
+ctx-bag sync push
+```
+
+Machine B:
+
+```bash
+ctx-bag init
+ctx-bag sync init <shared-folder>
+ctx-bag workspace available
+ctx-bag workspace attach <workspace-id>
+ctx-bag sync pull
+ctx-bag task resume <task-name>
+```
+
+Attachment is explicit: folder/path names are never used to infer cross-machine identity. `workspace attach` does not pull automatically — run `ctx-bag sync pull` afterward. If the shared folder still holds pre-`v0.2` state, run `ctx-bag sync upgrade` first (legacy state is preserved and v2 becomes authoritative; all devices sharing the folder should run a compatible version).
+
 ## Privacy model
 
 Context Baggage is local-first. It does not automatically upload anything, and it does not write application-specific state into the target project's Git repository. Synchronization is explicit and uses a user-configured filesystem folder. New workspaces default to `sync: false`; use `ctx-bag workspace init --sync` to opt a workspace into export.

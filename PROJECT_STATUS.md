@@ -3,7 +3,7 @@
 Date: 2026-08-26
 
 Phase:
-v0.1.0 released.
+v0.2 implementation complete; release validation pending.
 
 ## Locked Decisions
 
@@ -33,21 +33,27 @@ v0.1.0 released.
 | Public module validation    | PASS                 |
 | GitHub Actions CI           | PASS                 |
 | v0.1.0 release              | PUBLISHED            |
+| v0.2 implementation         | COMPLETE             |
+| Cross-machine workspace attach | COMPLETE          |
+| v0.2 diagnostics / integration | COMPLETE         |
 
 ## Release State
 
 ```text
 v0.1.0    RELEASED
+v0.2.0    RELEASE VALIDATION PENDING   (not yet tagged or released)
 ```
 
-`v0.1.0` is the first public release. Annotated tag, GitHub Release, public Go module resolution, and `go install @v0.1.0` were all validated.
+`v0.1.0` is the first public release. `v0.2.0` implements explicit cross-machine workspace attachment for non-Git / Git-without-remote workspaces, legacy sync-format transition, and workspace discovery; release publication is a separate reviewed step.
 
 ## Recent Validation
 
 - Remote CI (`Verify Go 1.22.x`, `Verify Go 1.27.x`, `Lint`) passes.
 - Remote `golangci-lint` fixed to `v2.13.1` for Go 1.27 compatibility.
 - Public `go install github.com/mhmdnsr-dev/context-baggage/cmd/ctx-bag@latest` verified.
+- Non-Git and Git-no-remote cross-machine attachment flows validated end-to-end.
+- Legacy `sync upgrade` → attach → pull flow validated.
 
 ## Next Action
 
-Post-v0.1 direction and v0.2 planning are handled separately.
+Final review, then tag and publish `v0.2.0` as a separate release action.
