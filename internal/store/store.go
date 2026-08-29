@@ -240,6 +240,25 @@ func (s Store) ListWorkspaces() ([]Workspace, error) {
 	return out, nil
 }
 
+// IsWorkspaceEmpty reports whether a workspace directory contains only the
+// canonical workspace.yaml metadata file. Any other entry — task state,
+// active-task marker, unknown or temporary files — makes it non-empty. This is
+// deliberately conservative: an "empty" workspace is safe to remove because it
+// holds no durable state beyond the metadata file.
+func (s Store) IsWorkspaceEmpty(id string) (bool, error) {
+	entries, err := os.ReadDir(s.WorkspaceDir(id))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, err
+	}
+	if len(entries) != 1 {
+		return false, nil
+	}
+	return entries[0].Name() == "workspace.yaml", nil
+}
+
 func (s Store) WriteTask(t Task) error {
 	data := fmt.Sprintf("id: %s\nname: %s\nworkspaceId: %s\nstatus: %s\ncreatedAt: %s\nupdatedAt: %s\n", t.ID, t.Name, t.WorkspaceID, t.Status, t.CreatedAt, t.UpdatedAt)
 	if err := AtomicWrite(s.TaskPath(t.WorkspaceID, t.ID), []byte(data), 0o600); err != nil {

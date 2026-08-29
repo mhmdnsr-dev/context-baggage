@@ -132,4 +132,17 @@ ctx-bag sync upgrade
 
 This converts the legacy shared representation to a sanitized v2 projection. It is a format conversion only: the local canonical store and the sync BASE bookkeeping are not changed, and the legacy namespace is preserved. After upgrading, run `ctx-bag sync pull` to import the shared state.
 
-`ctx-bag workspace available` lists attachable portable workspaces (local-directory / git-local) from the authoritative v2 shared state. It is read-only; `ctx-bag workspace attach` is not yet implemented.
+`ctx-bag workspace available` lists attachable portable workspaces (local-directory / git-local) from the authoritative v2 shared state. It is read-only.
+
+## Workspace attachment (v0.2)
+
+A non-Git or Git-without-remote workspace can be carried across machines by explicit attachment:
+
+```text
+ctx-bag workspace available        # list attachable portable workspaces
+ctx-bag workspace attach <id>      # attach current directory to the canonical workspace
+ctx-bag sync pull                  # import the shared task/checkpoint/handoff state
+ctx-bag task resume <task>
+```
+
+Attachment is explicit: folder or path names are never used to infer identity, and `workspace attach` does not pull automatically (it stages a `Sync:false` skeleton until the first `sync pull`). A local workspace that already contains durable context is protected and not overwritten. Git-remote repositories normally do not need attachment — they already have a deterministic portable identity.
