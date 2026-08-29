@@ -20,6 +20,38 @@ func TestEndToEndTwoMachineWorkflow(t *testing.T) {
 	homeA := t.TempDir()
 	homeB := t.TempDir()
 
+	deviceA, hashA1, wsID := setupMachineA(t, homeA, repoA, syncFolder)
+	deviceB, hashB2, wsIDB := setupMachineB(t, homeB, repoB, syncFolder)
+
+	if deviceA.ID == deviceB.ID {
+		t.Fatal("machine-local device IDs should differ")
+	}
+	if hashA1 == hashB2 {
+		t.Fatal("B checkpoint should change the portable sync hash")
+	}
+	if wsID != wsIDB {
+		t.Fatalf("workspace IDs differ: %s != %s", wsID, wsIDB)
+	}
+	runCLI(t, homeA, repoA, "sync", "pull")
+	if out := runCLI(t, homeB, repoB, "workspace", "status"); !strings.Contains(out, "w_") {
+		t.Fatalf("workspace not recognized after pull:\n%s", out)
+	}
+	if out := runCLI(t, homeB, repoB, "task", "resume", "test-task"); !strings.Contains(out, "test-task") {
+		t.Fatalf("task not available after pull:\n%s", out)
+	}
+	verifyCheckpointProvenance(t, homeA, wsID, deviceA, deviceB)
+	deviceAAfterPull, err := store.New(homeA).ReadDevice()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deviceAAfterPull.ID != deviceA.ID {
+		t.Fatalf("pull overwrote machine A device ID: %s != %s", deviceAAfterPull.ID, deviceA.ID)
+	}
+}
+
+// setupMachineA runs the Machine A side of the two-machine workflow.
+func setupMachineA(t *testing.T, homeA, repoA, syncFolder string) (store.Device, string, string) {
+	t.Helper()
 	runCLI(t, homeA, repoA, "init")
 	runCLI(t, homeA, repoA, "workspace", "init", "--sync")
 	runCLI(t, homeA, repoA, "task", "start", "test-task")
@@ -36,12 +68,16 @@ func TestEndToEndTwoMachineWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hashA1 := stateA.LastPushHash
-	workspaceA, err := workspace.Resolve(repoA)
+	work, err := workspace.Resolve(repoA)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return deviceA, stateA.LastPushHash, work.ID
+}
 
+// setupMachineB runs the Machine B side of the two-machine workflow.
+func setupMachineB(t *testing.T, homeB, repoB, syncFolder string) (store.Device, string, string) {
+	t.Helper()
 	runCLI(t, homeB, repoB, "init")
 	runCLI(t, homeB, repoB, "sync", "init", syncFolder)
 	runCLI(t, homeB, repoB, "sync", "pull")
@@ -52,35 +88,22 @@ func TestEndToEndTwoMachineWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deviceA.ID == deviceB.ID {
-		t.Fatal("machine-local device IDs should differ")
-	}
 	stateB, err := storeB.ReadSync()
 	if err != nil {
 		t.Fatal(err)
 	}
-	hashB2 := stateB.LastPushHash
-	if hashA1 == hashB2 {
-		t.Fatal("B checkpoint should change the portable sync hash")
-	}
-	workspaceB, err := workspace.Resolve(repoB)
+	work, err := workspace.Resolve(repoB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if workspaceA.ID != workspaceB.ID {
-		t.Fatalf("workspace IDs differ: %s != %s", workspaceA.ID, workspaceB.ID)
-	}
-	runCLI(t, homeA, repoA, "sync", "pull")
+	return deviceB, stateB.LastPushHash, work.ID
+}
 
-	out := runCLI(t, homeB, repoB, "workspace", "status")
-	if !strings.Contains(out, "w_") {
-		t.Fatalf("workspace not recognized after pull:\n%s", out)
-	}
-	out = runCLI(t, homeB, repoB, "task", "resume", "test-task")
-	if !strings.Contains(out, "test-task") {
-		t.Fatalf("task not available after pull:\n%s", out)
-	}
-	cp := filepath.Join(homeA, "workspaces", workspaceA.ID, "tasks", "test-task", "checkpoints.jsonl")
+// verifyCheckpointProvenance asserts both machines' checkpoints merged with the
+// correct device provenance and the handoff survived the round trip.
+func verifyCheckpointProvenance(t *testing.T, homeA, wsID string, deviceA, deviceB store.Device) {
+	t.Helper()
+	cp := filepath.Join(homeA, "workspaces", wsID, "tasks", "test-task", "checkpoints.jsonl")
 	data, err := os.ReadFile(cp)
 	if err != nil {
 		t.Fatal(err)
@@ -95,14 +118,7 @@ func TestEndToEndTwoMachineWorkflow(t *testing.T) {
 	if checkpoints[1].DeviceID != deviceB.ID {
 		t.Fatalf("checkpoint B device = %s, want %s", checkpoints[1].DeviceID, deviceB.ID)
 	}
-	deviceAAfterPull, err := storeA.ReadDevice()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if deviceAAfterPull.ID != deviceA.ID {
-		t.Fatalf("pull overwrote machine A device ID: %s != %s", deviceAAfterPull.ID, deviceA.ID)
-	}
-	handoff := filepath.Join(homeA, "workspaces", workspaceA.ID, "tasks", "test-task", "handoff.md")
+	handoff := filepath.Join(homeA, "workspaces", wsID, "tasks", "test-task", "handoff.md")
 	if _, err := os.Stat(handoff); err != nil {
 		t.Fatalf("handoff missing after pull: %v", err)
 	}

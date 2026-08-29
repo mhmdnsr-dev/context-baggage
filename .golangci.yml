@@ -7,6 +7,14 @@ linters:
     - misspell
     - unconvert
     - unused
+    - funlen
+    - gocognit
+  settings:
+    funlen:
+      lines: 100
+      statements: 60
+    gocognit:
+      min-complexity: 20
 
 formatters:
   enable:
