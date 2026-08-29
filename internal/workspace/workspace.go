@@ -186,6 +186,10 @@ func Attach(s store.Store, cwd string, target store.PortableWorkspace) (store.Wo
 	return t, true, nil
 }
 
+// removeLocalPath returns paths without the given workspace root. It preserves
+// unrelated paths and their existing order. Ownership is removed before the
+// target is attached so a crash leaves the path temporarily unattached, never
+// owned by two workspace IDs.
 func removeLocalPath(paths []string, path string) []string {
 	var out []string
 	for _, p := range paths {
