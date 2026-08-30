@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mhmdnsr-dev/context-baggage/internal/store"
 )
@@ -77,11 +78,12 @@ func buildPortableExportFromLegacy(legacyDir, dest string) error {
 	return nil
 }
 
-// preflightPortable validates all incoming portable workspace IDs before any
-// import mutation. It refuses to overwrite a locally staged (Sync:false)
-// workspace that has accumulated unshared local context.
+// preflightPortable validates incoming portable identities and local
+// preservation prerequisites before any import mutation. It also refuses to
+// overwrite a staged (Sync:false) workspace with unshared local context.
 func preflightPortable(s store.Store, src string) error {
 	wsDir := filepath.Join(src, "workspaces")
+	portableStore := store.New(src)
 	entries, err := os.ReadDir(wsDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -93,21 +95,96 @@ func preflightPortable(s store.Store, src string) error {
 		if !e.IsDir() {
 			continue
 		}
-		id := e.Name()
-		w, err := s.ReadWorkspace(id)
-		if err != nil {
-			continue // no local record; nothing stale to protect
-		}
-		if w.Sync {
-			continue // sync-enabled: the normal conflict model governs
-		}
-		empty, err := s.IsWorkspaceEmpty(id)
-		if err != nil {
+		if err := preflightPortableWorkspace(s, portableStore, wsDir, e.Name()); err != nil {
 			return err
 		}
-		if !empty {
-			return fmt.Errorf("local workspace %s has unshared local context\nrefusing to overwrite it\nsafe next action: resolve the local context before pulling", id)
+	}
+	return nil
+}
+
+// preflightPortableWorkspace validates one portable workspace and confirms any
+// existing local record can safely supply the fields import must preserve.
+func preflightPortableWorkspace(s, portableStore store.Store, wsDir, dirID string) error {
+	exportWsDir := filepath.Join(wsDir, dirID)
+	portable, err := store.ReadPortableWorkspace(exportWsDir)
+	if err != nil {
+		return fmt.Errorf("read portable workspace %q: %w", dirID, err)
+	}
+	if portable.ID != dirID {
+		return fmt.Errorf("portable workspace directory ID %q does not match workspace metadata ID %q", dirID, portable.ID)
+	}
+	if err := preflightPortableTasks(portableStore, exportWsDir, dirID); err != nil {
+		return err
+	}
+	w, err := s.ReadWorkspace(dirID)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil // no local record; nothing stale to protect
+	}
+	if err != nil {
+		return fmt.Errorf("read local workspace %q before pull: %w", dirID, err)
+	}
+	if w.Sync {
+		return nil // sync-enabled: the normal conflict model governs
+	}
+	empty, err := s.IsWorkspaceEmpty(dirID)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		return fmt.Errorf("local workspace %s has unshared local context\nrefusing to overwrite it\nsafe next action: resolve the local context before pulling", dirID)
+	}
+	return nil
+}
+
+// preflightPortableTasks validates task identities and the active-task
+// reference using the existing portable task layout before import can delete
+// or replace any local task state.
+func preflightPortableTasks(portableStore store.Store, exportWsDir, workspaceID string) error {
+	taskIDs := make(map[string]struct{})
+	tasksDir := filepath.Join(exportWsDir, "tasks")
+	entries, err := os.ReadDir(tasksDir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read portable tasks for workspace %q: %w", workspaceID, err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
 		}
+		dirID := e.Name()
+		task, err := portableStore.ReadTask(workspaceID, dirID)
+		if err != nil {
+			return fmt.Errorf("read portable task %q for workspace %q: %w", dirID, workspaceID, err)
+		}
+		if task.ID == "" {
+			return fmt.Errorf("portable task %q for workspace %q has an empty metadata ID", dirID, workspaceID)
+		}
+		if task.ID != dirID {
+			return fmt.Errorf("portable task directory ID %q does not match task metadata ID %q in workspace %q", dirID, task.ID, workspaceID)
+		}
+		if task.WorkspaceID != "" && task.WorkspaceID != workspaceID {
+			return fmt.Errorf("portable task %q workspace ID %q does not match workspace %q", dirID, task.WorkspaceID, workspaceID)
+		}
+		taskIDs[dirID] = struct{}{}
+	}
+	return preflightPortableActiveTask(exportWsDir, workspaceID, taskIDs)
+}
+
+// preflightPortableActiveTask ensures the optional active-task marker names a
+// task that was validated in the same portable workspace.
+func preflightPortableActiveTask(exportWsDir, workspaceID string, taskIDs map[string]struct{}) error {
+	data, err := os.ReadFile(filepath.Join(exportWsDir, "active-task"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read active task for portable workspace %q: %w", workspaceID, err)
+	}
+	activeTaskID := strings.TrimSpace(string(data))
+	if activeTaskID == "" {
+		return fmt.Errorf("portable workspace %q has an empty active-task reference", workspaceID)
+	}
+	if _, ok := taskIDs[activeTaskID]; !ok {
+		return fmt.Errorf("portable workspace %q active-task %q does not reference a valid portable task", workspaceID, activeTaskID)
 	}
 	return nil
 }
@@ -141,7 +218,10 @@ func importPortableWorkspace(s store.Store, exportWsDir string) error {
 		return err
 	}
 	localDir := s.WorkspaceDir(p.ID)
-	local := preserveLocalFields(s, p.ID)
+	local, err := preserveLocalFields(s, p.ID)
+	if err != nil {
+		return err
+	}
 	// Replace only the known portable-owned paths.
 	if err := os.RemoveAll(filepath.Join(localDir, "tasks")); err != nil {
 		return err
@@ -167,11 +247,16 @@ func importPortableWorkspace(s store.Store, exportWsDir string) error {
 	return s.WriteWorkspace(w)
 }
 
-// preserveLocalFields returns the existing local workspace record for an id, or
-// an empty record when none exists.
-func preserveLocalFields(s store.Store, id string) store.Workspace {
-	if w, err := s.ReadWorkspace(id); err == nil {
-		return w
+// preserveLocalFields returns an empty record only when the workspace is
+// genuinely absent. Existing metadata that cannot be read must stop import so
+// machine-local fields are never discarded as though they did not exist.
+func preserveLocalFields(s store.Store, id string) (store.Workspace, error) {
+	w, err := s.ReadWorkspace(id)
+	if err == nil {
+		return w, nil
 	}
-	return store.Workspace{}
+	if errors.Is(err, os.ErrNotExist) {
+		return store.Workspace{}, nil
+	}
+	return store.Workspace{}, fmt.Errorf("read local workspace %q before import: %w", id, err)
 }
