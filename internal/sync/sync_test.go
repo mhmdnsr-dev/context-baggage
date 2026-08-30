@@ -352,10 +352,11 @@ func TestPullPreservesLocalPaths(t *testing.T) {
 	if _, err := Init(b, folder); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.WriteWorkspace(store.Workspace{ID: "w_shared", Name: "example", LocalPaths: []string{"/machine-b/foo"}, Sync: true, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-02T00:00:00Z"}); err != nil {
+	if err := b.WriteWorkspace(store.Workspace{ID: "w_shared", Name: "example", LocalPaths: []string{"/machine-b/foo"}, Sync: true, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-05-05T00:00:00Z"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Pull(b); err != nil {
+	hash, err := Pull(b)
+	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := b.ReadWorkspace("w_shared")
@@ -364,6 +365,16 @@ func TestPullPreservesLocalPaths(t *testing.T) {
 	}
 	if len(got.LocalPaths) != 1 || got.LocalPaths[0] != "/machine-b/foo" {
 		t.Fatalf("pull did not preserve LocalPaths: %v", got.LocalPaths)
+	}
+	if got.UpdatedAt != "2026-05-05T00:00:00Z" {
+		t.Fatalf("pull did not preserve UpdatedAt: %q", got.UpdatedAt)
+	}
+	state, err := b.ReadSync()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.BaseHash != hash || state.LastPullHash != hash {
+		t.Fatalf("successful pull did not update BASE: %+v, hash %s", state, hash)
 	}
 }
 
