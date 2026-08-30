@@ -14,29 +14,6 @@ const (
 	exportDirV2 = "context-baggage-state-v2"
 )
 
-func Init(s store.Store, folder string) (store.SyncState, error) {
-	abs, err := filepath.Abs(folder)
-	if err != nil {
-		return store.SyncState{}, err
-	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return store.SyncState{}, fmt.Errorf("sync folder is unavailable: %s; check that the folder exists and is mounted", abs)
-	}
-	if !info.IsDir() {
-		return store.SyncState{}, fmt.Errorf("sync target is not a directory: %s", abs)
-	}
-	st := store.SyncState{Folder: abs}
-	if old, err := s.ReadSync(); err == nil {
-		st.LastPush = old.LastPush
-		st.LastPull = old.LastPull
-		st.LastPushHash = old.LastPushHash
-		st.LastPullHash = old.LastPullHash
-		st.BaseHash = old.BaseHash
-	}
-	return st, s.WriteSync(st)
-}
-
 func Push(s store.Store) (string, error) {
 	st, err := s.ReadSync()
 	if err != nil {
@@ -61,7 +38,7 @@ func Push(s store.Store) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if base := sharedBase(st); base == "" {
+	if base, hasBase := sharedBase(st); !hasBase {
 		// First-sync safety: with no shared baseline a push may only establish
 		// v2 from an empty or already-equivalent remote state.
 		if remoteHash != "" && localHash != remoteHash {
@@ -86,7 +63,10 @@ func Push(s store.Store) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	st.LastPush, st.LastPushHash, st.BaseHash = store.Now(), hash, hash
+	st.LastPush, st.LastPushHash = store.Now(), hash
+	if err := bindBaseToActiveDestination(&st, hash); err != nil {
+		return "", err
+	}
 	if err := s.WriteSync(st); err != nil {
 		return "", err
 	}
@@ -119,7 +99,7 @@ func Pull(s store.Store) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if base := sharedBase(st); base == "" {
+	if base, hasBase := sharedBase(st); !hasBase {
 		// First-sync safety: with no shared baseline a pull may only import when
 		// the local side is empty or already equals the remote state.
 		localNonEmpty, err := hasEligibleWorkspaces(s)
@@ -138,7 +118,10 @@ func Pull(s store.Store) (string, error) {
 	if err := importPortable(s, src); err != nil {
 		return "", err
 	}
-	st.LastPull, st.LastPullHash, st.BaseHash = store.Now(), incomingHash, incomingHash
+	st.LastPull, st.LastPullHash = store.Now(), incomingHash
+	if err := bindBaseToActiveDestination(&st, incomingHash); err != nil {
+		return "", err
+	}
 	if err := s.WriteSync(st); err != nil {
 		return "", err
 	}
@@ -160,23 +143,34 @@ func eligibleHash(s store.Store) (string, error) {
 	return store.HashDir(tmp)
 }
 
-func sharedBase(st store.SyncState) string {
-	if st.BaseHash != "" {
-		return st.BaseHash
-	}
-	if st.LastPullHash != "" {
-		return st.LastPullHash
-	}
-	return st.LastPushHash
+func sharedBase(st store.SyncState) (string, bool) {
+	return st.BaseHash, st.BasePresent
 }
 
 func hasConflict(base, localHash, remoteHash string) bool {
-	if base == "" || localHash == remoteHash {
+	if localHash == remoteHash {
 		return false
 	}
 	// A conflict exists only when both local and remote state changed from the
 	// last shared baseline and the resulting portable states differ.
 	return localHash != base && remoteHash != base
+}
+
+// bindBaseToActiveDestination records a portable baseline together with the
+// identity that makes it safe to reuse for the active destination.
+func bindBaseToActiveDestination(state *store.SyncState, hash string) error {
+	identity := state.Folder
+	if state.DestinationType == store.DestinationGitHub {
+		identity = state.ManagedDestinationID
+	}
+	if identity == "" {
+		return fmt.Errorf("cannot bind sync BASE: active destination has no durable identity")
+	}
+	state.BasePresent = true
+	state.BaseHash = hash
+	state.BaseDestinationType = state.DestinationType
+	state.BaseDestinationIdentity = identity
+	return nil
 }
 
 func noBaseErr() error {
