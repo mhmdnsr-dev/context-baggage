@@ -102,13 +102,19 @@ func TestPortableHashIgnoresMachineLocalMetadata(t *testing.T) {
 	if err := s.WriteDevice(store.Device{ID: "d_after", Name: "after", OS: "linux", Arch: "amd64", CreatedAt: store.Now()}); err != nil {
 		t.Fatal(err)
 	}
+	syncFolder := t.TempDir()
 	if err := s.WriteSync(store.SyncState{
-		Folder:       t.TempDir(),
-		LastPush:     store.Now(),
-		LastPull:     store.Now(),
-		LastPushHash: "push",
-		LastPullHash: "pull",
-		BaseHash:     "base",
+		FormatVersion:           store.SyncStateFormatVersion,
+		DestinationType:         store.DestinationFilesystem,
+		Folder:                  syncFolder,
+		LastPush:                store.Now(),
+		LastPull:                store.Now(),
+		LastPushHash:            "push",
+		LastPullHash:            "pull",
+		BasePresent:             true,
+		BaseHash:                "base",
+		BaseDestinationType:     store.DestinationFilesystem,
+		BaseDestinationIdentity: syncFolder,
 	}); err != nil {
 		t.Fatal(err)
 	}

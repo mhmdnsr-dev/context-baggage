@@ -46,7 +46,6 @@ func (s Store) Init() error {
 
 func (s Store) ConfigPath() string { return filepath.Join(s.Home, "config.yaml") }
 func (s Store) DevicePath() string { return filepath.Join(s.Home, "device.yaml") }
-func (s Store) SyncPath() string   { return filepath.Join(s.Home, "sync", "state.yaml") }
 func (s Store) WorkspaceDir(id string) string {
 	return filepath.Join(s.Home, "workspaces", id)
 }
@@ -329,19 +328,6 @@ func (s Store) AppendCheckpoint(workspaceID, taskID string, record any) error {
 		return err
 	}
 	return f.Close()
-}
-
-func (s Store) ReadSync() (SyncState, error) {
-	kv, err := readKV(s.SyncPath())
-	if err != nil {
-		return SyncState{}, err
-	}
-	return SyncState{Folder: kv["folder"], LastPush: kv["lastPush"], LastPull: kv["lastPull"], LastPushHash: kv["lastPushHash"], LastPullHash: kv["lastPullHash"], BaseHash: kv["baseHash"]}, nil
-}
-
-func (s Store) WriteSync(st SyncState) error {
-	data := fmt.Sprintf("folder: %s\nlastPush: %s\nlastPull: %s\nlastPushHash: %s\nlastPullHash: %s\nbaseHash: %s\n", st.Folder, st.LastPush, st.LastPull, st.LastPushHash, st.LastPullHash, st.BaseHash)
-	return AtomicWrite(s.SyncPath(), []byte(data), 0o600)
 }
 
 func (s Store) WriteInventory(agent string, inv AgentInventory) error {
