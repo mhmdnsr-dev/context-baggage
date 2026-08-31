@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,19 @@ const (
 )
 
 func Push(s store.Store) (string, error) {
+	// Operations that need both locks always acquire sync before canonical.
+	// The canonical shared phase ends once the immutable export is built.
+	unlock, err := s.AcquireSyncExclusive(context.Background())
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = unlock() }()
+	return pushFilesystem(s)
+}
+
+// pushFilesystem publishes one immutable LOCAL snapshot while the caller owns
+// the sync-operation lock.
+func pushFilesystem(s store.Store) (string, error) {
 	st, err := s.ReadSync()
 	if err != nil {
 		return "", errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
@@ -30,7 +44,16 @@ func Push(s store.Store) (string, error) {
 	if err := os.MkdirAll(st.Folder, 0o700); err != nil {
 		return "", err
 	}
-	localHash, err := eligibleHash(s)
+	tmp, err := os.MkdirTemp(st.Folder, ".ctx-bag-push-*")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		// Temporary-directory cleanup is best-effort; it does not change the
+		// result of a completed or failed push.
+		_ = os.RemoveAll(tmp)
+	}()
+	localHash, err := buildPushSnapshot(s, tmp)
 	if err != nil {
 		return "", err
 	}
@@ -47,18 +70,6 @@ func Push(s store.Store) (string, error) {
 	} else if hasConflict(base, localHash, remoteHash) {
 		return "", fmt.Errorf("CONFLICT DETECTED\nresource: sync folder\nlocal hash: %s\nincoming hash: %s\nsafe next action: inspect %s before pushing", localHash, remoteHash, dest)
 	}
-	tmp, err := os.MkdirTemp(st.Folder, ".ctx-bag-push-*")
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		// Temporary-directory cleanup is best-effort; it does not change the
-		// result of a completed or failed push.
-		_ = os.RemoveAll(tmp)
-	}()
-	if err := buildPortableExport(s, tmp); err != nil {
-		return "", err
-	}
 	hash, err := replaceV2(tmp, dest)
 	if err != nil {
 		return "", err
@@ -74,6 +85,19 @@ func Push(s store.Store) (string, error) {
 }
 
 func Pull(s store.Store) (string, error) {
+	// Pull observes REMOTE while holding only sync. Canonical is acquired
+	// exclusively afterward and remains held through BASE persistence.
+	unlock, err := s.AcquireSyncExclusive(context.Background())
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = unlock() }()
+	return pullFilesystem(s)
+}
+
+// pullFilesystem observes REMOTE before taking canonical ownership, then keeps
+// canonical stable through LOCAL validation, import, and BASE persistence.
+func pullFilesystem(s store.Store) (string, error) {
 	st, err := s.ReadSync()
 	if err != nil {
 		return "", errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
@@ -93,6 +117,11 @@ func Pull(s store.Store) (string, error) {
 	if incomingHash == "" {
 		return "", fmt.Errorf("sync folder has no exported state: %s", src)
 	}
+	canonicalUnlock, err := s.AcquireCanonicalExclusive(context.Background())
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = canonicalUnlock() }()
 	// Sync bookkeeping is machine-local and must not affect the portable-state
 	// hash. Otherwise a successful push would make the next pull look local.
 	localHash, err := eligibleHash(s)
@@ -126,6 +155,20 @@ func Pull(s store.Store) (string, error) {
 		return "", err
 	}
 	return incomingHash, nil
+}
+
+// buildPushSnapshot exports and hashes one coherent LOCAL view. Returning from
+// this helper releases canonical ownership before destination publication.
+func buildPushSnapshot(s store.Store, dest string) (string, error) {
+	unlock, err := s.AcquireCanonicalShared(context.Background())
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = unlock() }()
+	if err := buildPortableExport(s, dest); err != nil {
+		return "", err
+	}
+	return store.HashDir(dest)
 }
 
 func eligibleHash(s store.Store) (string, error) {

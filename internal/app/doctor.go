@@ -15,6 +15,18 @@ import (
 )
 
 func runDoctor(s store.Store, out io.Writer) error {
+	if config.EnsureInitialized(s) == nil {
+		syncUnlock, err := acquireSyncShared(s)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = syncUnlock() }()
+		canonicalUnlock, err := acquireCanonicalShared(s)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = canonicalUnlock() }()
+	}
 	problems, warnings := doctorDiagnostics(s)
 	if len(problems) > 0 {
 		if err := writeOutput(out, "Doctor: problems found\n"); err != nil {

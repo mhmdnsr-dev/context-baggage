@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,17 @@ import (
 // namespace. It is a format conversion only: it never mutates the local
 // canonical store or the sync BASE bookkeeping.
 func SyncUpgrade(s store.Store) error {
+	unlock, err := s.AcquireSyncExclusive(context.Background())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	return syncUpgrade(s)
+}
+
+// syncUpgrade performs the filesystem namespace conversion while its caller
+// owns the sync-operation lock.
+func syncUpgrade(s store.Store) error {
 	st, err := s.ReadSync()
 	if err != nil {
 		return errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")

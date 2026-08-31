@@ -48,6 +48,11 @@ func runSync(s store.Store, args []string, out io.Writer) error {
 }
 
 func runSyncStatus(s store.Store, out io.Writer) error {
+	unlock, err := acquireSyncShared(s)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
 	st, err := s.ReadSync()
 	if err != nil {
 		return errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")

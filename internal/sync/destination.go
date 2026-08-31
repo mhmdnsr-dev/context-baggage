@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,11 @@ import (
 // public CLI historically permits replacing its folder; explicit --replace
 // parsing is introduced only with the later v0.3 CLI integration slice.
 func Init(s store.Store, folder string) (store.SyncState, error) {
+	unlock, err := s.AcquireSyncExclusive(context.Background())
+	if err != nil {
+		return store.SyncState{}, err
+	}
+	defer func() { _ = unlock() }()
 	return initFilesystem(s, folder, true)
 }
 
