@@ -14,6 +14,15 @@ func runTask(s store.Store, args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("task subcommand required\nrun: ctx-bag task status")
 	}
+	acquire := acquireCanonicalShared
+	if args[0] == "start" || args[0] == "resume" {
+		acquire = acquireCanonicalExclusive
+	}
+	unlock, err := acquire(s)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
 	w, _, err := workspace.Current(s, mustCwd())
 	if err != nil {
 		return err
@@ -87,6 +96,11 @@ func runCheckpoint(s store.Store, args []string, out io.Writer) error {
 			i++
 		}
 	}
+	unlock, err := acquireCanonicalExclusive(s)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
 	w, _, err := workspace.Current(s, mustCwd())
 	if err != nil {
 		return err
@@ -102,6 +116,11 @@ func runCheckpoint(s store.Store, args []string, out io.Writer) error {
 }
 
 func runHandoff(s store.Store, out io.Writer) error {
+	unlock, err := acquireCanonicalExclusive(s)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
 	w, _, err := workspace.Current(s, mustCwd())
 	if err != nil {
 		return err

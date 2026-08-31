@@ -16,33 +16,9 @@ func runWorkspace(s store.Store, args []string, out io.Writer) error {
 	}
 	switch args[0] {
 	case "init":
-		syncPreference, err := parseWorkspaceSync(args[1:])
-		if err != nil {
-			return err
-		}
-		w, err := workspace.Init(s, mustCwd(), syncPreference)
-		if err != nil {
-			return err
-		}
-		return writeOutput(out, "Workspace initialized\nName: %s\nID: %s\nIdentity: %s:%s\nSync: %t\n", w.Name, w.ID, w.Identity.Type, w.Identity.Value, w.Sync)
+		return runWorkspaceInit(s, args[1:], out)
 	case "status":
-		w, r, err := workspace.Current(s, mustCwd())
-		if err != nil {
-			return err
-		}
-		rootLabel := "Git root"
-		if w.Identity.Type == "local-directory" {
-			rootLabel = "Workspace root"
-		}
-		if err := writeOutput(out, "Workspace\nName: %s\nID: %s\n%s: %s\nIdentity: %s:%s\nSync: %t\n", w.Name, w.ID, rootLabel, r.Root, w.Identity.Type, w.Identity.Value, w.Sync); err != nil {
-			return err
-		}
-		if r.ID != "" && r.ID != w.ID {
-			if err := writeOutput(out, "Observed Git ID: %s\nGit identity: differs from established workspace\n", r.ID); err != nil {
-				return err
-			}
-		}
-		return nil
+		return runWorkspaceStatus(s, out)
 	case "available":
 		return runWorkspaceAvailable(s, out)
 	case "attach":
@@ -55,9 +31,59 @@ func runWorkspace(s store.Store, args []string, out io.Writer) error {
 	}
 }
 
+func runWorkspaceInit(s store.Store, args []string, out io.Writer) error {
+	syncPreference, err := parseWorkspaceSync(args)
+	if err != nil {
+		return err
+	}
+	unlock, err := acquireCanonicalExclusive(s)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	w, err := workspace.Init(s, mustCwd(), syncPreference)
+	if err != nil {
+		return err
+	}
+	return writeOutput(out, "Workspace initialized\nName: %s\nID: %s\nIdentity: %s:%s\nSync: %t\n", w.Name, w.ID, w.Identity.Type, w.Identity.Value, w.Sync)
+}
+
+func runWorkspaceStatus(s store.Store, out io.Writer) error {
+	unlock, err := acquireCanonicalShared(s)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	w, r, err := workspace.Current(s, mustCwd())
+	if err != nil {
+		return err
+	}
+	rootLabel := "Git root"
+	if w.Identity.Type == "local-directory" {
+		rootLabel = "Workspace root"
+	}
+	if err := writeOutput(out, "Workspace\nName: %s\nID: %s\n%s: %s\nIdentity: %s:%s\nSync: %t\n", w.Name, w.ID, rootLabel, r.Root, w.Identity.Type, w.Identity.Value, w.Sync); err != nil {
+		return err
+	}
+	if r.ID != "" && r.ID != w.ID {
+		return writeOutput(out, "Observed Git ID: %s\nGit identity: differs from established workspace\n", r.ID)
+	}
+	return nil
+}
+
 // runWorkspaceAttach binds the current directory to an existing canonical
 // portable workspace. It is an identity/local-attachment operation only.
 func runWorkspaceAttach(s store.Store, arg string, out io.Writer) error {
+	syncUnlock, err := acquireSyncShared(s)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = syncUnlock() }()
+	canonicalUnlock, err := acquireCanonicalExclusive(s)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = canonicalUnlock() }()
 	st, err := s.ReadSync()
 	if err != nil {
 		return errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
@@ -95,6 +121,11 @@ func attachFromSync(s store.Store, folder, arg string, out io.Writer) error {
 // runWorkspaceAvailable lists attachable portable workspaces from the
 // authoritative v2 shared state. It is strictly read-only.
 func runWorkspaceAvailable(s store.Store, out io.Writer) error {
+	unlock, err := acquireSyncShared(s)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
 	st, err := s.ReadSync()
 	if err != nil {
 		return errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
