@@ -133,12 +133,18 @@ func appendOperationRemote(gitDir, transportURL string) error {
 	if err != nil {
 		return ErrTransportUnavailable
 	}
-	_, writeErr := io.WriteString(config, "\n[remote \""+targetRemoteName+"\"]\n\turl = "+transportURL+"\n")
+	_, writeErr := io.WriteString(config, "\n[remote \""+targetRemoteName+"\"]\n\turl = "+quoteGitConfigValue(transportURL)+"\n")
 	closeErr := config.Close()
 	if writeErr != nil || closeErr != nil {
 		return ErrTransportUnavailable
 	}
 	return nil
+}
+
+func quoteGitConfigValue(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `"`, `\"`)
+	return `"` + value + `"`
 }
 
 // parseSingleEffectiveTarget reuses the strict parser so rewritten custom

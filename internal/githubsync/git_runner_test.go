@@ -134,6 +134,28 @@ func TestGitRunnerPreservesAuthEnvironmentAndDisablesPrompts(t *testing.T) {
 	}
 }
 
+func TestOperationRemotePreservesWindowsStylePath(t *testing.T) {
+	runner, err := DiscoverGit()
+	if err != nil {
+		t.Skipf("system Git unavailable: %v", err)
+	}
+	gitDir := filepath.Join(t.TempDir(), "repository.git")
+	if _, err := runner.run(context.Background(), time.Second, "", "init", "--bare", "--quiet", gitDir); err != nil {
+		t.Fatal(err)
+	}
+	const remote = `C:\neutral\managed.git`
+	if err := appendOperationRemote(gitDir, remote); err != nil {
+		t.Fatal(err)
+	}
+	result, err := runner.run(context.Background(), time.Second, gitDir, "remote", "get-url", targetRemoteName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(result.stdout) != remote {
+		t.Fatalf("remote path was not preserved: %q", result.stdout)
+	}
+}
+
 func TestExplicitBlobAcquisitionUsesHardenedNetworkThenLocalRead(t *testing.T) {
 	t.Setenv(gitHelperEnvironment, "blob-acquisition")
 	buffer := &strings.Builder{}
