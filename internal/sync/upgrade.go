@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/mhmdnsr-dev/context-baggage/internal/store"
 )
@@ -94,8 +93,10 @@ func buildPortableExportFromLegacy(legacyDir, dest string) error {
 // preservation prerequisites before any import mutation. It also refuses to
 // overwrite a staged (Sync:false) workspace with unshared local context.
 func preflightPortable(s store.Store, src string) error {
+	if _, err := ValidatePortableSnapshot(src); err != nil {
+		return err
+	}
 	wsDir := filepath.Join(src, "workspaces")
-	portableStore := store.New(src)
 	entries, err := os.ReadDir(wsDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -107,27 +108,16 @@ func preflightPortable(s store.Store, src string) error {
 		if !e.IsDir() {
 			continue
 		}
-		if err := preflightPortableWorkspace(s, portableStore, wsDir, e.Name()); err != nil {
+		if err := preflightLocalWorkspace(s, e.Name()); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// preflightPortableWorkspace validates one portable workspace and confirms any
-// existing local record can safely supply the fields import must preserve.
-func preflightPortableWorkspace(s, portableStore store.Store, wsDir, dirID string) error {
-	exportWsDir := filepath.Join(wsDir, dirID)
-	portable, err := store.ReadPortableWorkspace(exportWsDir)
-	if err != nil {
-		return fmt.Errorf("read portable workspace %q: %w", dirID, err)
-	}
-	if portable.ID != dirID {
-		return fmt.Errorf("portable workspace directory ID %q does not match workspace metadata ID %q", dirID, portable.ID)
-	}
-	if err := preflightPortableTasks(portableStore, exportWsDir, dirID); err != nil {
-		return err
-	}
+// preflightLocalWorkspace confirms an existing local record can safely supply
+// the machine-local fields import must preserve.
+func preflightLocalWorkspace(s store.Store, dirID string) error {
 	w, err := s.ReadWorkspace(dirID)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil // no local record; nothing stale to protect
@@ -144,59 +134,6 @@ func preflightPortableWorkspace(s, portableStore store.Store, wsDir, dirID strin
 	}
 	if !empty {
 		return fmt.Errorf("local workspace %s has unshared local context\nrefusing to overwrite it\nsafe next action: resolve the local context before pulling", dirID)
-	}
-	return nil
-}
-
-// preflightPortableTasks validates task identities and the active-task
-// reference using the existing portable task layout before import can delete
-// or replace any local task state.
-func preflightPortableTasks(portableStore store.Store, exportWsDir, workspaceID string) error {
-	taskIDs := make(map[string]struct{})
-	tasksDir := filepath.Join(exportWsDir, "tasks")
-	entries, err := os.ReadDir(tasksDir)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read portable tasks for workspace %q: %w", workspaceID, err)
-	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		dirID := e.Name()
-		task, err := portableStore.ReadTask(workspaceID, dirID)
-		if err != nil {
-			return fmt.Errorf("read portable task %q for workspace %q: %w", dirID, workspaceID, err)
-		}
-		if task.ID == "" {
-			return fmt.Errorf("portable task %q for workspace %q has an empty metadata ID", dirID, workspaceID)
-		}
-		if task.ID != dirID {
-			return fmt.Errorf("portable task directory ID %q does not match task metadata ID %q in workspace %q", dirID, task.ID, workspaceID)
-		}
-		if task.WorkspaceID != "" && task.WorkspaceID != workspaceID {
-			return fmt.Errorf("portable task %q workspace ID %q does not match workspace %q", dirID, task.WorkspaceID, workspaceID)
-		}
-		taskIDs[dirID] = struct{}{}
-	}
-	return preflightPortableActiveTask(exportWsDir, workspaceID, taskIDs)
-}
-
-// preflightPortableActiveTask ensures the optional active-task marker names a
-// task that was validated in the same portable workspace.
-func preflightPortableActiveTask(exportWsDir, workspaceID string, taskIDs map[string]struct{}) error {
-	data, err := os.ReadFile(filepath.Join(exportWsDir, "active-task"))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("read active task for portable workspace %q: %w", workspaceID, err)
-	}
-	activeTaskID := strings.TrimSpace(string(data))
-	if activeTaskID == "" {
-		return fmt.Errorf("portable workspace %q has an empty active-task reference", workspaceID)
-	}
-	if _, ok := taskIDs[activeTaskID]; !ok {
-		return fmt.Errorf("portable workspace %q active-task %q does not reference a valid portable task", workspaceID, activeTaskID)
 	}
 	return nil
 }

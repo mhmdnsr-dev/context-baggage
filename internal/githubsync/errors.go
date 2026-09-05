@@ -27,4 +27,21 @@ var (
 
 	// ErrPrivacyUnverifiable reports an ambiguous or malformed public lookup.
 	ErrPrivacyUnverifiable = errors.New("repository visibility could not be verified")
+
+	// ErrRepositoryIncompatible reports repository refs or contents outside the
+	// dedicated managed-repository format.
+	ErrRepositoryIncompatible = errors.New("repository is incompatible with managed synchronization")
+
+	// ErrManagedMarkerInvalid reports malformed or unsupported management metadata.
+	ErrManagedMarkerInvalid = errors.New("managed repository marker is invalid")
+
+	// ErrManagedDestinationMismatch reports a marker identity other than the expected destination.
+	ErrManagedDestinationMismatch = errors.New("managed destination identity does not match")
+
+	// ErrManagedDestinationAdoptionRequired reports an initialized destination
+	// observed without an already-bound expected identity.
+	ErrManagedDestinationAdoptionRequired = errors.New("managed destination requires explicit adoption")
+
+	// ErrResourceLimitExceeded reports a repository outside locked inspection bounds.
+	ErrResourceLimitExceeded = errors.New("managed repository exceeds resource limits")
 )
