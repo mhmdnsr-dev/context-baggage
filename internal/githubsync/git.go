@@ -22,9 +22,11 @@ const (
 // It preserves normal external authentication while bounding execution and
 // preventing raw subprocess diagnostics from reaching callers.
 type GitRunner struct {
-	executable        string
-	inspectionTimeout time.Duration
-	readTimeout       time.Duration
+	executable         string
+	inspectionTimeout  time.Duration
+	readTimeout        time.Duration
+	testFileTransport  bool
+	testTemporaryLimit int64
 }
 
 // DiscoverGit locates the system Git executable only when a GitHub operation
@@ -80,6 +82,14 @@ func (g GitRunner) runNetwork(ctx context.Context, timeout time.Duration, dir st
 	return g.run(ctx, timeout, dir, networkArgs...)
 }
 
+// runNetworkStream keeps network stdout out of the fixed diagnostic capture
+// so a trusted incremental parser can enforce its own semantic limits.
+func (g GitRunner) runNetworkStream(ctx context.Context, timeout time.Duration, dir string, stdout io.Writer, args ...string) error {
+	networkArgs := []string{"-c", "http.followRedirects=false"}
+	networkArgs = append(networkArgs, args...)
+	return g.runStream(ctx, timeout, dir, stdout, nil, networkArgs...)
+}
+
 // effectiveTargets asks Git itself to expand URL rewriting for one isolated
 // operation-local remote. Requiring exactly one fetch and one push URL avoids
 // accidental multi-target publication semantics.
@@ -123,12 +133,18 @@ func appendOperationRemote(gitDir, transportURL string) error {
 	if err != nil {
 		return ErrTransportUnavailable
 	}
-	_, writeErr := io.WriteString(config, "\n[remote \""+targetRemoteName+"\"]\n\turl = "+transportURL+"\n")
+	_, writeErr := io.WriteString(config, "\n[remote \""+targetRemoteName+"\"]\n\turl = "+quoteGitConfigValue(transportURL)+"\n")
 	closeErr := config.Close()
 	if writeErr != nil || closeErr != nil {
 		return ErrTransportUnavailable
 	}
 	return nil
+}
+
+func quoteGitConfigValue(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `"`, `\"`)
+	return `"` + value + `"`
 }
 
 // parseSingleEffectiveTarget reuses the strict parser so rewritten custom
@@ -159,12 +175,7 @@ func (g GitRunner) run(ctx context.Context, timeout time.Duration, dir string, a
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	commandArgs := []string{
-		"-c", "protocol.allow=never",
-		"-c", "protocol.https.allow=always",
-		"-c", "protocol.ssh.allow=always",
-	}
-	commandArgs = append(commandArgs, args...)
+	commandArgs := g.commandArgs(args)
 	command := exec.CommandContext(runCtx, g.executable, commandArgs...)
 	command.Dir = dir
 	command.Env = gitEnvironment()
@@ -179,12 +190,48 @@ func (g GitRunner) run(ctx context.Context, timeout time.Duration, dir string, a
 	return gitCommandResult{stdout: stdout.String()}, nil
 }
 
+// runStream directs stdout only to a purpose-built bounded parser or writer;
+// stderr remains bounded and neither stream is included in returned errors.
+func (g GitRunner) runStream(ctx context.Context, timeout time.Duration, dir string, stdout io.Writer, stdin io.Reader, args ...string) error {
+	if g.executable == "" {
+		return ErrGitUnavailable
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	command := exec.CommandContext(runCtx, g.executable, g.commandArgs(args)...)
+	command.Dir = dir
+	command.Env = gitEnvironment()
+	command.Stdout = stdout
+	command.Stdin = stdin
+	stderr := newBoundedBuffer(maxGitOutput)
+	command.Stderr = stderr
+	err := command.Run()
+	if runCtx.Err() != nil || err != nil || stderr.overflow {
+		return ErrTransportUnavailable
+	}
+	return nil
+}
+
+func (g GitRunner) commandArgs(args []string) []string {
+	commandArgs := []string{
+		"-c", "protocol.allow=never",
+		"-c", "protocol.https.allow=always",
+		"-c", "protocol.ssh.allow=always",
+	}
+	if g.testFileTransport {
+		commandArgs = append(commandArgs, "-c", "protocol.file.allow=always")
+	}
+	commandArgs = append(commandArgs, args...)
+	return commandArgs
+}
+
 // gitEnvironment preserves external authentication configuration while
 // disabling terminal/credential-manager prompts and stabilizing diagnostics.
 func gitEnvironment() []string {
 	replacements := map[string]string{
 		"GIT_TERMINAL_PROMPT": "0",
 		"GCM_INTERACTIVE":     "Never",
+		"GIT_NO_LAZY_FETCH":   "1",
 		"LC_ALL":              "C",
 	}
 	environment := make([]string, 0, len(os.Environ())+len(replacements))

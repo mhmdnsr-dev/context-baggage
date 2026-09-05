@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -133,6 +134,83 @@ func TestGitRunnerPreservesAuthEnvironmentAndDisablesPrompts(t *testing.T) {
 	}
 }
 
+func TestOperationRemotePreservesWindowsStylePath(t *testing.T) {
+	runner, err := DiscoverGit()
+	if err != nil {
+		t.Skipf("system Git unavailable: %v", err)
+	}
+	gitDir := filepath.Join(t.TempDir(), "repository.git")
+	if _, err := runner.run(context.Background(), time.Second, "", "init", "--bare", "--quiet", gitDir); err != nil {
+		t.Fatal(err)
+	}
+	const remote = `C:\neutral\managed.git`
+	if err := appendOperationRemote(gitDir, remote); err != nil {
+		t.Fatal(err)
+	}
+	result, err := runner.run(context.Background(), time.Second, gitDir, "remote", "get-url", targetRemoteName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(result.stdout) != remote {
+		t.Fatalf("remote path was not preserved: %q", result.stdout)
+	}
+}
+
+func TestExplicitBlobAcquisitionUsesHardenedNetworkThenLocalRead(t *testing.T) {
+	t.Setenv(gitHelperEnvironment, "blob-acquisition")
+	buffer := &strings.Builder{}
+	entry := gitTreeEntry{objectID: strings.Repeat("a", 40)}
+	written, err := helperGitRunner().acquireBlob(context.Background(), t.TempDir(), t.TempDir(), entry, 4, buffer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written != 4 || buffer.String() != "blob" {
+		t.Fatalf("unexpected materialized blob: bytes=%d value=%q", written, buffer.String())
+	}
+}
+
+func TestExplicitBlobAcquisitionIsCancellable(t *testing.T) {
+	t.Setenv(gitHelperEnvironment, "block")
+	runner := helperGitRunner()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := runner.acquirePromisedBlob(ctx, t.TempDir(), t.TempDir(), strings.Repeat("a", 40))
+	if !errors.Is(err, ErrTransportUnavailable) {
+		t.Fatalf("expected cancelled acquisition, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("cancelled acquisition returned too slowly: %s", elapsed)
+	}
+}
+
+func TestExplicitBlobAcquisitionUsesTemporaryGuard(t *testing.T) {
+	t.Setenv(gitHelperEnvironment, "grow-temp")
+	root := t.TempDir()
+	runner := helperGitRunner()
+	runner.testTemporaryLimit = 4 * 1024
+	err := runner.acquirePromisedBlob(context.Background(), root, root, strings.Repeat("a", 40))
+	if !errors.Is(err, ErrResourceLimitExceeded) {
+		t.Fatalf("expected guarded acquisition refusal, got %v", err)
+	}
+}
+
+func TestGuardedGitOperationStopsTemporaryGrowth(t *testing.T) {
+	t.Setenv(gitHelperEnvironment, "grow-temp")
+	root := t.TempDir()
+	err := helperGitRunner().runNetworkGuarded(context.Background(), 5*time.Second, root, root, 4*1024, "grow")
+	if !errors.Is(err, ErrResourceLimitExceeded) {
+		t.Fatalf("expected temporary guard refusal, got %v", err)
+	}
+	info, statErr := os.Stat(filepath.Join(root, "growing.pack"))
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if info.Size() >= 64*1024 {
+		t.Fatalf("temporary guard reacted too late: %d bytes", info.Size())
+	}
+}
+
 func helperGitRunner() GitRunner {
 	return GitRunner{
 		executable:        os.Args[0],
@@ -163,7 +241,8 @@ func runGitHelper(mode string) {
 	case "block":
 		time.Sleep(10 * time.Second)
 	case "check-environment":
-		if os.Getenv("GIT_TERMINAL_PROMPT") != "0" || os.Getenv("GCM_INTERACTIVE") != "Never" || os.Getenv("LC_ALL") != "C" {
+		if os.Getenv("GIT_TERMINAL_PROMPT") != "0" || os.Getenv("GCM_INTERACTIVE") != "Never" ||
+			os.Getenv("GIT_NO_LAZY_FETCH") != "1" || os.Getenv("LC_ALL") != "C" {
 			os.Exit(1)
 		}
 		if os.Getenv("SSH_AUTH_SOCK") != "example-agent-socket" {
@@ -172,8 +251,45 @@ func runGitHelper(mode string) {
 		if os.Getenv("GIT_DIR") != "" {
 			os.Exit(1)
 		}
+	case "grow-temp":
+		growTemporaryFile()
+	case "blob-acquisition":
+		assertBlobAcquisitionCommand()
 	default:
 		os.Exit(2)
+	}
+}
+
+func assertBlobAcquisitionCommand() {
+	const objectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if hasArguments("fetch") {
+		if !hasArguments("http.followRedirects=false", "--no-tags", "--no-write-fetch-head", targetRemoteName, objectID) {
+			os.Exit(1)
+		}
+		return
+	}
+	if hasArguments("cat-file", "blob", objectID) && os.Getenv("GIT_NO_LAZY_FETCH") == "1" {
+		_, _ = fmt.Fprint(os.Stdout, "blob")
+		return
+	}
+	os.Exit(1)
+}
+
+func growTemporaryFile() {
+	file, err := os.Create("growing.pack")
+	if err != nil {
+		os.Exit(1)
+	}
+	defer func() { _ = file.Close() }()
+	chunk := []byte(strings.Repeat("x", 1024))
+	for {
+		if _, err := file.Write(chunk); err != nil {
+			os.Exit(1)
+		}
+		if err := file.Sync(); err != nil {
+			os.Exit(1)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
