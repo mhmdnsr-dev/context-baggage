@@ -44,4 +44,16 @@ var (
 
 	// ErrResourceLimitExceeded reports a repository outside locked inspection bounds.
 	ErrResourceLimitExceeded = errors.New("managed repository exceeds resource limits")
+
+	// ErrPrivacyRefused reports a repository that was not freshly proven non-public.
+	ErrPrivacyRefused = errors.New("managed publication requires a verified non-public repository")
+
+	// ErrManagedDestinationLost reports a previously claimed destination that is now empty.
+	ErrManagedDestinationLost = errors.New("managed destination identity is no longer present")
+
+	// ErrPublicationConflict reports an exact lease loss or a changed confirmed ref.
+	ErrPublicationConflict = errors.New("managed publication lost a remote race")
+
+	// ErrPublicationAmbiguous reports a push whose resulting remote state cannot be proven.
+	ErrPublicationAmbiguous = errors.New("managed publication outcome is ambiguous")
 )

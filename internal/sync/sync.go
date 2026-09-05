@@ -10,6 +10,8 @@ import (
 	"github.com/mhmdnsr-dev/context-baggage/internal/store"
 )
 
+var ErrPortableExportLimit = errors.New("portable export exceeds byte limit")
+
 const (
 	exportDir   = "context-baggage-state"
 	exportDirV2 = "context-baggage-state-v2"
@@ -53,7 +55,7 @@ func pushFilesystem(s store.Store) (string, error) {
 		// result of a completed or failed push.
 		_ = os.RemoveAll(tmp)
 	}()
-	localHash, err := buildPushSnapshot(s, tmp)
+	localHash, err := BuildPushSnapshot(s, tmp)
 	if err != nil {
 		return "", err
 	}
@@ -61,13 +63,10 @@ func pushFilesystem(s store.Store) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if base, hasBase := sharedBase(st); !hasBase {
-		// First-sync safety: with no shared baseline a push may only establish
-		// v2 from an empty or already-equivalent remote state.
-		if remoteHash != "" && localHash != remoteHash {
+	if PushWouldConflict(st, localHash, remoteHash) {
+		if !st.BasePresent {
 			return "", noBaseErr()
 		}
-	} else if hasConflict(base, localHash, remoteHash) {
 		return "", fmt.Errorf("CONFLICT DETECTED\nresource: sync folder\nlocal hash: %s\nincoming hash: %s\nsafe next action: inspect %s before pushing", localHash, remoteHash, dest)
 	}
 	hash, err := replaceV2(tmp, dest)
@@ -75,7 +74,7 @@ func pushFilesystem(s store.Store) (string, error) {
 		return "", err
 	}
 	st.LastPush, st.LastPushHash = store.Now(), hash
-	if err := bindBaseToActiveDestination(&st, hash); err != nil {
+	if err := BindBaseToActiveDestination(&st, hash); err != nil {
 		return "", err
 	}
 	if err := s.WriteSync(st); err != nil {
@@ -148,7 +147,7 @@ func pullFilesystem(s store.Store) (string, error) {
 		return "", err
 	}
 	st.LastPull, st.LastPullHash = store.Now(), incomingHash
-	if err := bindBaseToActiveDestination(&st, incomingHash); err != nil {
+	if err := BindBaseToActiveDestination(&st, incomingHash); err != nil {
 		return "", err
 	}
 	if err := s.WriteSync(st); err != nil {
@@ -157,18 +156,37 @@ func pullFilesystem(s store.Store) (string, error) {
 	return incomingHash, nil
 }
 
-// buildPushSnapshot exports and hashes one coherent LOCAL view. Returning from
+// BuildPushSnapshot exports and hashes one coherent LOCAL view. Returning from
 // this helper releases canonical ownership before destination publication.
-func buildPushSnapshot(s store.Store, dest string) (string, error) {
+func BuildPushSnapshot(s store.Store, dest string) (string, error) {
+	return buildPushSnapshot(s, dest, nil)
+}
+
+// BuildPushSnapshotBounded prevents the immutable export itself from growing
+// past the caller's provider limit while canonical shared ownership is held.
+func BuildPushSnapshotBounded(s store.Store, dest string, maxBytes int64) (string, error) {
+	return buildPushSnapshot(s, dest, &exportBudget{remaining: maxBytes})
+}
+
+func buildPushSnapshot(s store.Store, dest string, budget *exportBudget) (string, error) {
 	unlock, err := s.AcquireCanonicalShared(context.Background())
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = unlock() }()
-	if err := buildPortableExport(s, dest); err != nil {
+	if err := buildPortableExportBounded(s, dest, budget); err != nil {
 		return "", err
 	}
 	return store.HashDir(dest)
+}
+
+// PushWouldConflict applies the provider-independent LOCAL/REMOTE/BASE push
+// matrix. A missing BASE permits only an empty or already-equivalent REMOTE.
+func PushWouldConflict(state store.SyncState, localHash, remoteHash string) bool {
+	if !state.BasePresent {
+		return remoteHash != "" && localHash != remoteHash
+	}
+	return hasConflict(state.BaseHash, localHash, remoteHash)
 }
 
 func eligibleHash(s store.Store) (string, error) {
@@ -199,9 +217,9 @@ func hasConflict(base, localHash, remoteHash string) bool {
 	return localHash != base && remoteHash != base
 }
 
-// bindBaseToActiveDestination records a portable baseline together with the
+// BindBaseToActiveDestination records a portable baseline together with the
 // identity that makes it safe to reuse for the active destination.
-func bindBaseToActiveDestination(state *store.SyncState, hash string) error {
+func BindBaseToActiveDestination(state *store.SyncState, hash string) error {
 	identity := state.Folder
 	if state.DestinationType == store.DestinationGitHub {
 		identity = state.ManagedDestinationID

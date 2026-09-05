@@ -286,7 +286,7 @@ func establishLocalBase(t *testing.T, s store.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := bindBaseToActiveDestination(&state, hash); err != nil {
+	if err := BindBaseToActiveDestination(&state, hash); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.WriteSync(state); err != nil {
