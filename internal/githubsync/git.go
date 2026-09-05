@@ -229,6 +229,10 @@ func (g GitRunner) commandArgs(args []string) []string {
 // disabling terminal/credential-manager prompts and stabilizing diagnostics.
 func gitEnvironment() []string {
 	replacements := map[string]string{
+		"GIT_AUTHOR_EMAIL":    "sync@context-baggage.invalid",
+		"GIT_AUTHOR_NAME":     "Context Baggage",
+		"GIT_COMMITTER_EMAIL": "sync@context-baggage.invalid",
+		"GIT_COMMITTER_NAME":  "Context Baggage",
 		"GIT_TERMINAL_PROMPT": "0",
 		"GCM_INTERACTIVE":     "Never",
 		"GIT_NO_LAZY_FETCH":   "1",

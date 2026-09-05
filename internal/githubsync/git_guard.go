@@ -23,6 +23,22 @@ func (g GitRunner) runNetworkGuarded(ctx context.Context, timeout time.Duration,
 	return nil
 }
 
+func (g GitRunner) runLocalGuarded(ctx context.Context, timeout time.Duration, dir, guardRoot string, args ...string) (gitCommandResult, error) {
+	stdout := newBoundedBuffer(maxGitOutput)
+	err := g.runStreamGuarded(ctx, timeout, dir, guardRoot, g.temporaryByteLimit(), stdout, args...)
+	if err != nil || stdout.overflow {
+		return gitCommandResult{}, errOrTransport(err)
+	}
+	return gitCommandResult{stdout: stdout.String()}, nil
+}
+
+func errOrTransport(err error) error {
+	if err != nil {
+		return err
+	}
+	return ErrTransportUnavailable
+}
+
 // runNetworkStreamGuarded preserves redirect hardening while allowing a
 // bounded consumer and active temporary-storage guard to observe the command.
 func (g GitRunner) runNetworkStreamGuarded(ctx context.Context, timeout time.Duration, dir, guardRoot string, limit int64, stdout io.Writer, args ...string) error {

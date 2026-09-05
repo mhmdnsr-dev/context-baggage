@@ -15,8 +15,13 @@ import (
 )
 
 const gitHelperEnvironment = "CTX_BAG_GIT_TEST_HELPER"
+const publicationLockHelperEnvironment = "CTX_BAG_PUBLICATION_LOCK_HELPER"
 
 func TestMain(m *testing.M) {
+	if os.Getenv(publicationLockHelperEnvironment) != "" {
+		runPublicationLockHelper()
+		return
+	}
 	if mode := os.Getenv(gitHelperEnvironment); mode != "" {
 		runGitHelper(mode)
 		return
@@ -195,6 +200,19 @@ func TestExplicitBlobAcquisitionUsesTemporaryGuard(t *testing.T) {
 	}
 }
 
+func TestPublicationPushNamesExactLeaseRemoteAndRefspec(t *testing.T) {
+	t.Setenv(gitHelperEnvironment, "publication-push")
+	root := t.TempDir()
+	for _, expected := range []string{"", strings.Repeat("b", 40)} {
+		prepared := preparedPublication{
+			workDir: root, commitID: strings.Repeat("a", 40), expectedID: expected,
+		}
+		if err := helperGitRunner().pushPrepared(context.Background(), root, prepared); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestGuardedGitOperationStopsTemporaryGrowth(t *testing.T) {
 	t.Setenv(gitHelperEnvironment, "grow-temp")
 	root := t.TempDir()
@@ -255,8 +273,23 @@ func runGitHelper(mode string) {
 		growTemporaryFile()
 	case "blob-acquisition":
 		assertBlobAcquisitionCommand()
+	case "publication-push":
+		assertPublicationPushCommand()
 	default:
 		os.Exit(2)
+	}
+}
+
+func assertPublicationPushCommand() {
+	const newID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if !hasArguments("http.followRedirects=false", "push", "--no-verify", "--porcelain", targetRemoteName,
+		newID+":"+managedRef) {
+		os.Exit(1)
+	}
+	leasePrefix := "--force-with-lease=" + managedRef + ":"
+	leaseOK := hasExactArgument(leasePrefix) || hasExactArgument(leasePrefix+strings.Repeat("b", 40))
+	if !leaseOK {
+		os.Exit(1)
 	}
 }
 
@@ -301,4 +334,13 @@ func hasArguments(want ...string) bool {
 		}
 	}
 	return true
+}
+
+func hasExactArgument(want string) bool {
+	for _, argument := range os.Args[1:] {
+		if argument == want {
+			return true
+		}
+	}
+	return false
 }
