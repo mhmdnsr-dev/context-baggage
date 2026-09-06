@@ -23,7 +23,11 @@ func TestSyncInitLiteralGitHubIsFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.DestinationType != store.DestinationFilesystem || state.Folder != filepath.Join(root, "github") {
+	expectedRoot := root
+	if resolved, resolveErr := filepath.EvalSymlinks(root); resolveErr == nil {
+		expectedRoot = resolved
+	}
+	if state.DestinationType != store.DestinationFilesystem || state.Folder != filepath.Join(expectedRoot, "github") {
 		t.Fatalf("literal github parsed as managed destination: %+v", state)
 	}
 }
