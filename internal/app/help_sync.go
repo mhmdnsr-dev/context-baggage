@@ -6,17 +6,29 @@ Commands:
   sync status
   sync push
   sync pull
+  sync recover
   sync upgrade
 
 Behavior:
-  Portable state is shared through an explicitly configured filesystem folder.
-  Context Baggage does not perform network transport itself; the folder may be
-  synchronized by an external tool.
+  Portable state is shared through a filesystem folder or a dedicated,
+  demonstrably non-public GitHub.com repository.
 `
 
 const docSyncInit = `
 Behavior:
-  Configures a local filesystem folder as the sync target for this machine.
+  Configures a filesystem folder or a managed GitHub.com repository.
+
+Usage forms:
+  ctx-bag sync init <folder> [--replace]
+  ctx-bag sync init github <repository-url> [--replace]
+
+  A single literal "github" remains a filesystem folder for compatibility.
+  The managed form requires an SSH or HTTPS GitHub repository locator.
+
+Managed requirements:
+  The repository must already exist, be dedicated to Context Baggage, and be
+  demonstrably non-public. Normal Git SSH/HTTPS authentication is used;
+  Context Baggage does not read or store tokens.
 
 Example:
   ctx-bag sync init <shared-folder>
@@ -24,16 +36,15 @@ Example:
 
 const docSyncStatus = `
 Behavior:
-  Shows the configured sync folder, last push/pull times, and the shared-state
-  format. When a legacy and a v2 namespace both exist, v2 is authoritative and
-  legacy is ignored.
+  Shows local configuration, BASE, pending recovery, and last-observed REMOTE
+  knowledge. It is offline: "last observed" and "last refreshed" never imply a
+  live remote check. Filesystem format status is also shown.
 `
 
 const docSyncPush = `
 Behavior:
-  Writes eligible portable state to the shared folder. Workspaces that are not
-  opted into sync are excluded. Conflict safety can refuse a push when it cannot
-  safely determine a direction.
+  Writes eligible portable state to the active filesystem or managed GitHub
+  destination. Workspaces not opted into sync are excluded.
 
 Important:
   No automatic reconciliation or merge is performed.
@@ -41,8 +52,9 @@ Important:
 
 const docSyncPull = `
 Behavior:
-  Imports authoritative portable state from the shared folder and preserves
-  machine-local path metadata. Conflict safety refuses an unsafe overwrite.
+  Imports authoritative portable state from the active destination and
+  preserves machine-local path metadata. Conflict safety refuses an unsafe
+  overwrite. Managed Pull records durable recovery metadata before mutation.
 
 Example:
   ctx-bag workspace attach <workspace-id>
@@ -50,6 +62,17 @@ Example:
 
 See also:
   workspace attach
+`
+
+const docSyncRecover = `
+Behavior:
+  Conservatively completes an interrupted managed Pull. With LOCAL equal to the
+  recorded pre-state it retries the exact recorded target. With LOCAL equal to
+  the target it finalizes BASE. Any other LOCAL state is refused.
+
+Important:
+  Recovery never follows current remote HEAD and has no force, discard, merge,
+  or automatic-retry option. With no pending record it is a successful no-op.
 `
 
 const docSyncUpgrade = `

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,12 +10,31 @@ import (
 	"strings"
 
 	"github.com/mhmdnsr-dev/context-baggage/internal/config"
+	"github.com/mhmdnsr-dev/context-baggage/internal/githubsync"
 	"github.com/mhmdnsr-dev/context-baggage/internal/store"
 	syncer "github.com/mhmdnsr-dev/context-baggage/internal/sync"
 	"github.com/mhmdnsr-dev/context-baggage/internal/workspace"
 )
 
-func runDoctor(s store.Store, out io.Writer) error {
+func runDoctor(s store.Store, args []string, out io.Writer) error {
+	remote := false
+	if len(args) == 1 && args[0] == "--remote" {
+		remote = true
+	} else if len(args) != 0 {
+		return errors.New("doctor accepts only --remote")
+	}
+	if err := runLocalDoctor(s, out); err != nil {
+		return err
+	}
+	if !remote {
+		return nil
+	}
+	return runRemoteDoctor(s, out)
+}
+
+// runLocalDoctor scopes local locks to local diagnostics so --remote never
+// holds product locks across Git or HTTP operations.
+func runLocalDoctor(s store.Store, out io.Writer) error {
 	if config.EnsureInitialized(s) == nil {
 		syncUnlock, err := acquireSyncShared(s)
 		if err != nil {
@@ -48,6 +68,70 @@ func runDoctor(s store.Store, out io.Writer) error {
 		return writeOutput(out, "Doctor: OK (warnings)\n")
 	}
 	return writeOutput(out, "Doctor: OK\n")
+}
+
+// runRemoteDoctor observes the configured destination without persisting any
+// privacy, repository, BASE, recovery, or canonical state.
+func runRemoteDoctor(s store.Store, out io.Writer) error {
+	state, err := s.ReadSync()
+	if err != nil {
+		return errors.New("remote Doctor: sync is not configured")
+	}
+	if state.DestinationType != store.DestinationGitHub {
+		if _, err := os.Stat(state.Folder); err != nil {
+			return errors.New("remote Doctor: configured sync folder is unavailable")
+		}
+		return writeOutput(out, "Remote Doctor: filesystem destination is available\n")
+	}
+	locator, err := configuredManagedLocator(state)
+	if err != nil {
+		return mapManagedError(err)
+	}
+	git, err := managedGitDiscovery()
+	if err != nil {
+		return mapManagedError(err)
+	}
+	observation, err := inspectManagedDoctor(context.Background(), git, locator)
+	if err != nil {
+		return mapManagedError(err)
+	}
+	if observation.privacy == githubsync.VerifiedPublic {
+		return errors.New("repository is public; managed sync requires a non-public repository")
+	}
+	if observation.privacy != githubsync.VerifiedNonPublic {
+		return errors.New("repository privacy could not be verified")
+	}
+	if err := printManagedDoctorState(out, state, observation.snapshot); err != nil {
+		return err
+	}
+	if exists, recoveryErr := s.PullRecoveryExists(); recoveryErr != nil {
+		return errors.New("managed pull recovery state is malformed")
+	} else if exists {
+		if _, err := s.ReadPullRecovery(); err != nil {
+			return errors.New("managed pull recovery state is malformed")
+		}
+		return writeOutput(out, "Recovery: pending\nRun: ctx-bag sync recover\n")
+	}
+	return writeOutput(out, "Remote Doctor: OK\n")
+}
+
+func printManagedDoctorState(out io.Writer, state store.SyncState, snapshot githubsync.RepositorySnapshot) error {
+	if snapshot.State == githubsync.RepositoryEmpty {
+		if state.ManagedDestinationID != "" {
+			return errors.New("managed destination identity was lost")
+		}
+		return writeOutput(out, "Repository state: Empty\nManaged destination: unclaimed\nThe first successful managed Push will claim it.\n")
+	}
+	if snapshot.State != githubsync.RepositoryInitialized {
+		return errors.New("repository is incompatible with Context Baggage managed sync")
+	}
+	if state.ManagedDestinationID == "" {
+		return errors.New("explicit adoption is required; run ctx-bag sync init github <repository-url>")
+	}
+	if state.ManagedDestinationID != snapshot.ManagedDestinationID {
+		return errors.New("managed destination identity mismatch")
+	}
+	return writeOutput(out, "Repository state: Initialized\nManaged destination: %s\nPrivacy: verified non-public\n", snapshot.ManagedDestinationID)
 }
 
 // doctorDiagnostics gathers health problems and warnings for the current state.

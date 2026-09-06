@@ -9,10 +9,20 @@ import (
 	"github.com/mhmdnsr-dev/context-baggage/internal/store"
 )
 
-// Init configures the existing filesystem sync destination. The current
-// public CLI historically permits replacing its folder; explicit --replace
-// parsing is introduced only with the later v0.3 CLI integration slice.
+// ErrDestinationAlreadyConfigured reports a requested change that requires
+// explicit replacement permission.
+var ErrDestinationAlreadyConfigured = errors.New("a different sync destination is already configured")
+
+// Init preserves the internal legacy behavior that authorizes filesystem
+// replacement. Public CLI callers use InitWithReplacement for explicit policy.
 func Init(s store.Store, folder string) (store.SyncState, error) {
+	return InitWithReplacement(s, folder, true)
+}
+
+// InitWithReplacement configures a filesystem destination while requiring an
+// explicit permission before changing its normalized identity. Reinitializing
+// the same destination preserves destination-bound bookkeeping.
+func InitWithReplacement(s store.Store, folder string, allowReplacement bool) (store.SyncState, error) {
 	unlock, err := s.AcquireSyncExclusive(context.Background())
 	if err != nil {
 		return store.SyncState{}, err
@@ -21,7 +31,7 @@ func Init(s store.Store, folder string) (store.SyncState, error) {
 	if err := ensureNoPendingRecovery(s); err != nil {
 		return store.SyncState{}, err
 	}
-	return initFilesystem(s, folder, true)
+	return initFilesystem(s, folder, allowReplacement)
 }
 
 // ensureNoPendingRecovery refuses to change the active destination while an
@@ -68,7 +78,7 @@ func initFilesystem(s store.Store, folder string, allowReplacement bool) (store.
 		return writeFilesystemDestination(s, old)
 	}
 	if !allowReplacement {
-		return store.SyncState{}, errors.New("a different sync destination is already configured")
+		return store.SyncState{}, ErrDestinationAlreadyConfigured
 	}
 	return writeFilesystemDestination(s, newFilesystemState(identity))
 }

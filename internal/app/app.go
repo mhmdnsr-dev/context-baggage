@@ -32,7 +32,7 @@ func Run(args []string, stdout, stderr io.Writer) error {
 	case "status":
 		return runStatus(s, stdout)
 	case "doctor":
-		return runDoctor(s, stdout)
+		return runDoctor(s, args[1:], stdout)
 	case "discover":
 		return withInit(s, func() error { return runDiscover(s, stdout) })
 	case "workspace":

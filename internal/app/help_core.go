@@ -21,12 +21,14 @@ See also:
 
 const docDoctor = `
 Behavior:
-  Checks configuration, workspace identity, and sync health.
+  "doctor" checks local configuration and identity without network access.
+  "doctor --remote" adds read-only destination and managed GitHub diagnostics.
 
 Important:
   Some findings are warnings and still let the command succeed. Integrity
   problems (such as a path owned by more than one workspace) fail the command.
-  Doctor reports problems but never auto-repairs.
+  Doctor reports problems but never auto-repairs. Remote Doctor does not change
+  configuration, privacy observations, sync state, BASE, or recovery state.
 `
 
 const docDiscover = `

@@ -118,3 +118,6 @@ jobs:
 
       - name: Verify managed recovery durable install
         run: go test ./internal/store -run 'TestPullRecovery' -count=1
+
+      - name: Verify managed CLI integration
+        run: go test ./internal/app -run 'Test(ParseSyncInit|SyncInit|FilesystemCLIReplacement|ManagedSyncDispatch|SyncStatus|RemoteVersusBase|Doctor|ManagedCLIFlow|SyncRecover|RecoveryPending)' -count=1
