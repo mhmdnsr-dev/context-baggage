@@ -23,11 +23,15 @@ func TestSyncInitLiteralGitHubIsFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectedRoot := root
-	if resolved, resolveErr := filepath.EvalSymlinks(root); resolveErr == nil {
-		expectedRoot = resolved
+	// NormalizeFilesystemDestination resolves the relative folder through the
+	// process working directory, so derive the expected identity from the same
+	// os.Getwd() value. This stays consistent on Windows (short-name paths)
+	// and macOS (/var -> /private/var symlinks) without hardcoding either.
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if state.DestinationType != store.DestinationFilesystem || state.Folder != filepath.Join(expectedRoot, "github") {
+	if state.DestinationType != store.DestinationFilesystem || state.Folder != filepath.Join(cwd, "github") {
 		t.Fatalf("literal github parsed as managed destination: %+v", state)
 	}
 }
