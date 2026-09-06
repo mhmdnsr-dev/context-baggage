@@ -18,7 +18,25 @@ func Init(s store.Store, folder string) (store.SyncState, error) {
 		return store.SyncState{}, err
 	}
 	defer func() { _ = unlock() }()
+	if err := ensureNoPendingRecovery(s); err != nil {
+		return store.SyncState{}, err
+	}
 	return initFilesystem(s, folder, true)
+}
+
+// ensureNoPendingRecovery refuses to change the active destination while an
+// interrupted managed Pull has left a recovery record bound to another
+// destination. Replacing the destination would make the record permanently
+// non-recoverable. It does not block read-only or offline operations.
+func ensureNoPendingRecovery(s store.Store) error {
+	exists, err := s.PullRecoveryExists()
+	if err != nil {
+		return err
+	}
+	if exists {
+		return errors.New("managed pull recovery is pending\nresolve the interrupted pull before reconfiguring sync")
+	}
+	return nil
 }
 
 // initFilesystem validates and activates a filesystem destination. Replacement

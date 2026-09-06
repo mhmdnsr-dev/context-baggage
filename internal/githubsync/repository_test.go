@@ -16,6 +16,10 @@ import (
 
 const validMarker = "format: 1\ndestinationId: " + neutralDestinationID + "\n"
 
+// emptyPortableHash is the canonical SHA-256 identity of an empty portable tree.
+// It is the consistent empty identity used by inspection, export, and LOCAL hash.
+const emptyPortableHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
 func TestRepositoryRefClassification(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -97,7 +101,7 @@ func assertRepositoryContentCase(t *testing.T, name string, files map[string]str
 	if err != nil || snapshot.State != RepositoryInitialized || snapshot.ManagedDestinationID != neutralDestinationID {
 		t.Fatalf("unexpected snapshot %+v, %v", snapshot, err)
 	}
-	if name == "marker only" && (snapshot.PortablePresent || snapshot.PortableHash != "") {
+	if name == "marker only" && (snapshot.PortablePresent || snapshot.PortableHash != emptyPortableHash) {
 		t.Fatalf("marker-only portable identity = present %t hash %q", snapshot.PortablePresent, snapshot.PortableHash)
 	}
 	if name == "marker and valid v2" && (!snapshot.PortablePresent || snapshot.PortableHash == "") {

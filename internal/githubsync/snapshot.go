@@ -27,6 +27,9 @@ func (g GitRunner) materializeAndValidate(ctx context.Context, root, gitDir, rep
 		return RepositorySnapshot{}, err
 	}
 	portableDir := filepath.Join(root, "portable")
+	if err := os.MkdirAll(portableDir, 0o700); err != nil {
+		return RepositorySnapshot{}, ErrTransportUnavailable
+	}
 	portablePresent := false
 	materializedBytes := markerBytes
 	for _, entry := range entries {

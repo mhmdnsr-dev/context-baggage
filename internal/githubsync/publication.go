@@ -36,6 +36,11 @@ func PublishManaged(ctx context.Context, s store.Store, git GitRunner) (string, 
 }
 
 func publishManaged(ctx context.Context, s store.Store, git GitRunner, runtime publicationRuntime) (string, error) {
+	if exists, err := s.PullRecoveryExists(); err != nil {
+		return "", err
+	} else if exists {
+		return "", ErrRecoveryRequired
+	}
 	state, locator, err := readPublicationState(s)
 	if err != nil {
 		return "", err

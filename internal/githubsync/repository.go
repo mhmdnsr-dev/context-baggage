@@ -128,34 +128,44 @@ func (g GitRunner) inspectObservedCommit(ctx context.Context, remoteURL, reposit
 		return RepositorySnapshot{}, ErrTransportUnavailable
 	}
 	defer func() { _ = os.RemoveAll(root) }()
+	snapshot, _, err := g.inspectAndMaterialize(ctx, remoteURL, repositoryIdentity, commitID, root)
+	return snapshot, err
+}
+
+// inspectAndMaterialize fetches the exact observed commit into root and
+// materializes its portable snapshot into root/portable. It returns the
+// snapshot and the materialized portable directory path so a caller can apply
+// the immutable target. The caller owns cleanup of root.
+func (g GitRunner) inspectAndMaterialize(ctx context.Context, remoteURL, repositoryIdentity, commitID, root string) (RepositorySnapshot, string, error) {
 	gitDir := filepath.Join(root, "repository.git")
 	if _, err := g.run(ctx, g.inspectionTimeout, "", "init", "--bare", "--quiet", gitDir); err != nil {
-		return RepositorySnapshot{}, err
+		return RepositorySnapshot{}, "", err
 	}
 	if err := appendManagedReadRemote(gitDir, remoteURL); err != nil {
-		return RepositorySnapshot{}, err
+		return RepositorySnapshot{}, "", err
 	}
 	if err := g.fetchObservedCommit(ctx, root, gitDir, commitID); err != nil {
-		return RepositorySnapshot{}, err
+		return RepositorySnapshot{}, "", err
 	}
 	temporaryBytes, err := temporaryUsage(root)
 	if err != nil {
-		return RepositorySnapshot{}, err
+		return RepositorySnapshot{}, "", err
 	}
 	if !temporarySizeAllowed(temporaryBytes, 0) {
-		return RepositorySnapshot{}, ErrResourceLimitExceeded
+		return RepositorySnapshot{}, "", ErrResourceLimitExceeded
 	}
 	if _, err := g.run(ctx, g.inspectionTimeout, gitDir, "cat-file", "-e", commitID+"^{commit}"); err != nil {
-		return RepositorySnapshot{}, ErrRepositoryIncompatible
+		return RepositorySnapshot{}, "", ErrRepositoryIncompatible
 	}
 	entries, err := g.readManagedTree(ctx, gitDir, commitID)
 	if err != nil {
-		return RepositorySnapshot{}, err
+		return RepositorySnapshot{}, "", err
 	}
 	if err := validateCompleteTree(entries); err != nil {
-		return RepositorySnapshot{}, err
+		return RepositorySnapshot{}, "", err
 	}
-	return g.materializeAndValidate(ctx, root, gitDir, repositoryIdentity, commitID, entries)
+	snapshot, err := g.materializeAndValidate(ctx, root, gitDir, repositoryIdentity, commitID, entries)
+	return snapshot, filepath.Join(root, "portable"), err
 }
 
 // fetchObservedCommit obtains commit and tree objects without eagerly receiving

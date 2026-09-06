@@ -56,4 +56,24 @@ var (
 
 	// ErrPublicationAmbiguous reports a push whose resulting remote state cannot be proven.
 	ErrPublicationAmbiguous = errors.New("managed publication outcome is ambiguous")
+
+	// ErrPullConflict reports a managed Pull that would overwrite divergent
+	// local portable state without a safe shared baseline.
+	ErrPullConflict = errors.New("managed pull lost a local conflict")
+
+	// ErrApplyMismatch reports canonical application that did not produce the
+	// recorded target portable identity.
+	ErrApplyMismatch = errors.New("managed pull did not produce the target portable identity")
+
+	// ErrRecoveryRequired reports an operation refused because an interrupted
+	// managed Pull has left canonical state possibly partial and BASE unfinalized.
+	ErrRecoveryRequired = errors.New("managed pull recovery is required")
+
+	// ErrRecoveryAmbiguous reports recovery input that is neither the recorded
+	// pre-state nor the recorded target state.
+	ErrRecoveryAmbiguous = errors.New("managed pull recovery state is ambiguous")
+
+	// ErrRecoveryBindingMismatch reports a recovery record that does not belong
+	// to the active managed destination.
+	ErrRecoveryBindingMismatch = errors.New("managed pull recovery record does not match the active destination")
 )

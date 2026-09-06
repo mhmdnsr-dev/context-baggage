@@ -18,6 +18,11 @@ func runTask(s store.Store, args []string, out io.Writer) error {
 	if args[0] == "start" || args[0] == "resume" {
 		acquire = acquireCanonicalExclusive
 	}
+	if args[0] == "start" || args[0] == "resume" {
+		if err := blockIfRecoveryPending(s); err != nil {
+			return err
+		}
+	}
 	unlock, err := acquire(s)
 	if err != nil {
 		return err
@@ -86,6 +91,9 @@ func runTaskStatus(s store.Store, w store.Workspace, out io.Writer) error {
 }
 
 func runCheckpoint(s store.Store, args []string, out io.Writer) error {
+	if err := blockIfRecoveryPending(s); err != nil {
+		return err
+	}
 	msg := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "-m" || args[i] == "--message" {
@@ -116,6 +124,9 @@ func runCheckpoint(s store.Store, args []string, out io.Writer) error {
 }
 
 func runHandoff(s store.Store, out io.Writer) error {
+	if err := blockIfRecoveryPending(s); err != nil {
+		return err
+	}
 	unlock, err := acquireCanonicalExclusive(s)
 	if err != nil {
 		return err
