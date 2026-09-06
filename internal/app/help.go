@@ -23,7 +23,7 @@ type commandDoc struct {
 var commandDocs = []commandDoc{
 	{Topic: "init", Usage: "ctx-bag init", Summary: "Initialize Context Baggage on this machine.", VisibleInHelp: true, Details: docInit},
 	{Topic: "status", Usage: "ctx-bag status", Summary: "Show current Context Baggage state.", VisibleInHelp: true, Details: docStatus},
-	{Topic: "doctor", Usage: "ctx-bag doctor", Summary: "Check configuration, workspace identity, and sync health.", VisibleInHelp: true, Details: docDoctor},
+	{Topic: "doctor", Usage: "ctx-bag doctor [--remote]", Summary: "Check local health and optional read-only remote health.", VisibleInHelp: true, Details: docDoctor},
 	{Topic: "discover", Usage: "ctx-bag discover", Summary: "Discover supported coding-agent configuration.", VisibleInHelp: true, Details: docDiscover},
 
 	{Topic: "workspace", Usage: "ctx-bag workspace <command>", Summary: "Manage the canonical workspace for the current directory.", VisibleInHelp: false, Details: docWorkspace},
@@ -41,10 +41,11 @@ var commandDocs = []commandDoc{
 	{Topic: "handoff", Usage: "ctx-bag handoff", Summary: "Show or create the current task handoff.", VisibleInHelp: true, Details: docHandoff},
 
 	{Topic: "sync", Usage: "ctx-bag sync <command>", Summary: "Manage portable state synced through a shared folder.", VisibleInHelp: false, Details: docSync},
-	{Topic: "sync init", Usage: "ctx-bag sync init <folder>", Summary: "Configure the shared filesystem sync folder.", VisibleInHelp: true, Details: docSyncInit},
+	{Topic: "sync init", Usage: "ctx-bag sync init <destination> [--replace]", Summary: "Configure a filesystem or managed GitHub destination.", VisibleInHelp: true, Details: docSyncInit},
 	{Topic: "sync status", Usage: "ctx-bag sync status", Summary: "Show sync configuration and shared-state status.", VisibleInHelp: true, Details: docSyncStatus},
 	{Topic: "sync push", Usage: "ctx-bag sync push", Summary: "Push portable state to the shared folder.", VisibleInHelp: true, Details: docSyncPush},
 	{Topic: "sync pull", Usage: "ctx-bag sync pull", Summary: "Pull portable state from the shared folder.", VisibleInHelp: true, Details: docSyncPull},
+	{Topic: "sync recover", Usage: "ctx-bag sync recover", Summary: "Conservatively finish an interrupted managed Pull.", VisibleInHelp: true, Details: docSyncRecover},
 	{Topic: "sync upgrade", Usage: "ctx-bag sync upgrade", Summary: "Convert legacy shared state to sync format v2.", VisibleInHelp: true, Details: docSyncUpgrade},
 
 	{Topic: "man", Usage: "ctx-bag man [topic...]", Summary: "Show the detailed built-in manual.", VisibleInHelp: true, Details: docMan},

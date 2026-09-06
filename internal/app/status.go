@@ -61,10 +61,17 @@ func printStatusAgents(s store.Store, out io.Writer) error {
 
 func printStatusSync(s store.Store, out io.Writer) error {
 	st, err := s.ReadSync()
-	if err != nil || st.Folder == "" {
+	if err != nil {
 		return nil
 	}
-	if err := writeOutput(out, "\nSync\n  configured\n  folder: %s\n", st.Folder); err != nil {
+	if st.DestinationType == store.DestinationGitHub {
+		managed := st.ManagedDestinationID
+		if managed == "" {
+			managed = "unclaimed"
+		}
+		return writeOutput(out, "\nSync\n  destination: github\n  repository: %s\n  managed destination: %s\n", st.GitHubRepository, managed)
+	}
+	if err := writeOutput(out, "\nSync\n  destination: filesystem\n  folder: %s\n", st.Folder); err != nil {
 		return err
 	}
 	if st.LastPush != "" {

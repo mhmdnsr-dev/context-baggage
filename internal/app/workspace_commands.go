@@ -94,7 +94,7 @@ func runWorkspaceAttach(s store.Store, arg string, out io.Writer) error {
 	defer func() { _ = canonicalUnlock() }()
 	st, err := s.ReadSync()
 	if err != nil {
-		return errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
+		return errors.New("sync is not configured\nrun: ctx-bag sync init <destination>")
 	}
 	return attachFromSync(s, st.Folder, arg, out)
 }
@@ -161,9 +161,9 @@ func runManagedWorkspaceAvailable(s store.Store, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	workspaces, err := githubsync.DiscoverManagedWorkspaces(context.Background(), s, git)
+	workspaces, err := managedDiscovery(context.Background(), s, git)
 	if err != nil {
-		return err
+		return mapManagedError(err)
 	}
 	var attachable []store.PortableWorkspace
 	for _, p := range workspaces {
@@ -198,7 +198,7 @@ func readSyncConfig(s store.Store) (store.SyncState, error) {
 	defer func() { _ = unlock() }()
 	st, err := s.ReadSync()
 	if err != nil {
-		return store.SyncState{}, errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
+		return store.SyncState{}, errors.New("sync is not configured\nrun: ctx-bag sync init <destination>")
 	}
 	return st, nil
 }

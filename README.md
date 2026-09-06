@@ -82,9 +82,21 @@ ctx-bag task resume <task-name>
 
 Attachment is explicit: folder/path names are never used to infer cross-machine identity. `workspace attach` does not pull automatically — run `ctx-bag sync pull` afterward. If the shared folder still holds pre-`v0.2` state, run `ctx-bag sync upgrade` first (legacy state is preserved and v2 becomes authoritative; all devices sharing the folder should run a compatible version).
 
+### v0.3: managed GitHub synchronization
+
+An existing, dedicated, non-public GitHub.com repository can be configured with normal Git SSH or HTTPS authentication:
+
+```bash
+ctx-bag sync init github <repository-url> [--replace]
+ctx-bag sync push
+ctx-bag sync pull
+```
+
+Context Baggage verifies that the repository is demonstrably non-public before configuration and every publication. It does not create repositories or store tokens. Managed Pull recovery is explicit and conservative through `ctx-bag sync recover`; `ctx-bag doctor --remote` performs read-only remote diagnostics. Detailed, version-matched behavior is available through `ctx-bag man sync init` and related built-in manual topics.
+
 ## Privacy model
 
-Context Baggage is local-first. It does not automatically upload anything, and it does not write application-specific state into the target project's Git repository. Synchronization is explicit and uses a user-configured filesystem folder. New workspaces default to `sync: false`; use `ctx-bag workspace init --sync` to opt a workspace into export.
+Context Baggage is local-first. It does not automatically upload anything, and it does not write application-specific state into the target project's Git repository. Synchronization is explicit and uses either a user-configured filesystem folder or a dedicated managed GitHub repository. New workspaces default to `sync: false`; use `ctx-bag workspace init --sync` to opt a workspace into export. Context Baggage never stores GitHub credentials and fails closed when repository privacy cannot be verified.
 
 Cloud-provider integrations are not part of `v0.1`.
 

@@ -48,6 +48,10 @@ var (
 	// ErrPrivacyRefused reports a repository that was not freshly proven non-public.
 	ErrPrivacyRefused = errors.New("managed publication requires a verified non-public repository")
 
+	// ErrRepositoryPublic reports a candidate proven public during explicit
+	// managed destination configuration.
+	ErrRepositoryPublic = errors.New("managed sync requires a non-public repository")
+
 	// ErrManagedDestinationLost reports a previously claimed destination that is now empty.
 	ErrManagedDestinationLost = errors.New("managed destination identity is no longer present")
 

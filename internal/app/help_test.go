@@ -25,6 +25,7 @@ var expectedLeafTopics = []string{
 	"sync status",
 	"sync push",
 	"sync pull",
+	"sync recover",
 	"sync upgrade",
 	"man",
 }
@@ -107,6 +108,9 @@ func TestHelpAliases(t *testing.T) {
 }
 
 func TestDocumentationCoverageAndUniqueTopics(t *testing.T) {
+	if len(commandDocs) != 23 {
+		t.Fatalf("manual topic count = %d, want 23", len(commandDocs))
+	}
 	seen := map[string]bool{}
 	for _, d := range commandDocs {
 		if d.Topic == "" || d.Usage == "" || d.Summary == "" {
@@ -137,6 +141,27 @@ func TestDocumentationCoverageAndUniqueTopics(t *testing.T) {
 		if d.VisibleInHelp {
 			t.Fatalf("group %q must be hidden from help", group)
 		}
+	}
+}
+
+func TestManagedManualVariants(t *testing.T) {
+	initDoc := runCLI(t, t.TempDir(), t.TempDir(), "man", "sync", "init")
+	for _, phrase := range []string{"sync init <folder> [--replace]", "sync init github <repository-url> [--replace]", "single literal \"github\"", "does not read or store tokens"} {
+		if !strings.Contains(initDoc, phrase) {
+			t.Fatalf("sync init manual missing %q:\n%s", phrase, initDoc)
+		}
+	}
+	doctor := runCLI(t, t.TempDir(), t.TempDir(), "man", "doctor")
+	if !strings.Contains(doctor, "doctor --remote") || !strings.Contains(doctor, "does not change") {
+		t.Fatalf("doctor manual missing remote read-only contract:\n%s", doctor)
+	}
+	status := runCLI(t, t.TempDir(), t.TempDir(), "man", "sync", "status")
+	if !strings.Contains(status, "last observed") || !strings.Contains(status, "offline") {
+		t.Fatalf("sync status manual missing observation semantics:\n%s", status)
+	}
+	recoverDoc := runCLI(t, t.TempDir(), t.TempDir(), "man", "sync", "recover")
+	if !strings.Contains(recoverDoc, "exact recorded target") || !strings.Contains(recoverDoc, "no force") {
+		t.Fatalf("sync recover manual missing conservative contract:\n%s", recoverDoc)
 	}
 }
 
