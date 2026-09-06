@@ -18,6 +18,9 @@ func buildPortableExport(s store.Store, dest string) error {
 }
 
 func buildPortableExportBounded(s store.Store, dest string, budget *exportBudget) error {
+	if err := os.MkdirAll(dest, 0o700); err != nil {
+		return err
+	}
 	workspaces, err := s.ListWorkspaces()
 	if err != nil {
 		return err

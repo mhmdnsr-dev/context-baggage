@@ -89,42 +89,17 @@ func StableID(prefix, value string) string {
 }
 
 func AtomicWrite(path string, data []byte, perm os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
 	// Canonical files should not be left half-written if the process exits or
 	// the OS interrupts the write. Write beside the target, flush, then rename.
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	tmpName, err := writeTempAtomic(path, data, perm)
 	if err != nil {
 		return err
 	}
-	tmpName := tmp.Name()
-	defer func() {
-		// Best-effort cleanup. Once rename succeeds this path no longer exists;
-		// on earlier failures the operation has already returned its real error.
+	if err := os.Rename(tmpName, path); err != nil {
 		_ = os.Remove(tmpName)
-	}()
-	if _, err := tmp.Write(data); err != nil {
-		if closeErr := tmp.Close(); closeErr != nil {
-			return fmt.Errorf("write temporary file: %w; close temporary file: %v", err, closeErr)
-		}
 		return err
 	}
-	if err := tmp.Sync(); err != nil {
-		if closeErr := tmp.Close(); closeErr != nil {
-			return fmt.Errorf("sync temporary file: %w; close temporary file: %v", err, closeErr)
-		}
-		return err
-	}
-	// Close must succeed before the temporary file is renamed. Some filesystem
-	// write failures can surface only when the file is closed.
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpName, perm); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
+	return nil
 }
 
 func (s Store) WriteConfig(c Config) error {

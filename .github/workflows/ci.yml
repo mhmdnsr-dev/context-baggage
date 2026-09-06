@@ -115,3 +115,6 @@ jobs:
 
       - name: Verify GitHub security primitives
         run: go test ./internal/githubsync -count=1
+
+      - name: Verify managed recovery durable install
+        run: go test ./internal/store -run 'TestPullRecovery' -count=1

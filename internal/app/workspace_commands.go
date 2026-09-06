@@ -1,10 +1,12 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 
+	"github.com/mhmdnsr-dev/context-baggage/internal/githubsync"
 	"github.com/mhmdnsr-dev/context-baggage/internal/store"
 	syncer "github.com/mhmdnsr-dev/context-baggage/internal/sync"
 	"github.com/mhmdnsr-dev/context-baggage/internal/workspace"
@@ -32,6 +34,9 @@ func runWorkspace(s store.Store, args []string, out io.Writer) error {
 }
 
 func runWorkspaceInit(s store.Store, args []string, out io.Writer) error {
+	if err := blockIfRecoveryPending(s); err != nil {
+		return err
+	}
 	syncPreference, err := parseWorkspaceSync(args)
 	if err != nil {
 		return err
@@ -74,6 +79,9 @@ func runWorkspaceStatus(s store.Store, out io.Writer) error {
 // runWorkspaceAttach binds the current directory to an existing canonical
 // portable workspace. It is an identity/local-attachment operation only.
 func runWorkspaceAttach(s store.Store, arg string, out io.Writer) error {
+	if err := blockIfRecoveryPending(s); err != nil {
+		return err
+	}
 	syncUnlock, err := acquireSyncShared(s)
 	if err != nil {
 		return err
@@ -118,18 +126,22 @@ func attachFromSync(s store.Store, folder, arg string, out io.Writer) error {
 	return writeOutput(out, "already attached to workspace %s\n", w.ID)
 }
 
-// runWorkspaceAvailable lists attachable portable workspaces from the
-// authoritative v2 shared state. It is strictly read-only.
+// runWorkspaceAvailable lists attachable portable workspaces from the active
+// destination. The managed GitHub backend refreshes the immutable REMOTE
+// snapshot; the filesystem backend reads the authoritative v2 shared state.
 func runWorkspaceAvailable(s store.Store, out io.Writer) error {
+	st, err := readSyncConfig(s)
+	if err != nil {
+		return err
+	}
+	if st.DestinationType == store.DestinationGitHub {
+		return runManagedWorkspaceAvailable(s, out)
+	}
 	unlock, err := acquireSyncShared(s)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = unlock() }()
-	st, err := s.ReadSync()
-	if err != nil {
-		return errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
-	}
 	workspaces, warnings, err := listAttachable(s, st.Folder)
 	if err != nil {
 		return err
@@ -139,6 +151,30 @@ func runWorkspaceAvailable(s store.Store, out io.Writer) error {
 			return err
 		}
 	}
+	return printAvailableWorkspaces(out, workspaces)
+}
+
+// runManagedWorkspaceAvailable refreshes the managed REMOTE snapshot and lists
+// its attachable portable workspaces without mutating canonical state or BASE.
+func runManagedWorkspaceAvailable(s store.Store, out io.Writer) error {
+	git, err := githubsync.DiscoverGit()
+	if err != nil {
+		return err
+	}
+	workspaces, err := githubsync.DiscoverManagedWorkspaces(context.Background(), s, git)
+	if err != nil {
+		return err
+	}
+	var attachable []store.PortableWorkspace
+	for _, p := range workspaces {
+		if syncer.IsAttachable(p.Identity) {
+			attachable = append(attachable, p)
+		}
+	}
+	return printAvailableWorkspaces(out, attachable)
+}
+
+func printAvailableWorkspaces(out io.Writer, workspaces []store.PortableWorkspace) error {
 	if len(workspaces) == 0 {
 		return writeOutput(out, "Available portable workspaces: none\n")
 	}
@@ -151,6 +187,20 @@ func runWorkspaceAvailable(s store.Store, out io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// readSyncConfig reads the active destination under a shared sync lock.
+func readSyncConfig(s store.Store) (store.SyncState, error) {
+	unlock, err := acquireSyncShared(s)
+	if err != nil {
+		return store.SyncState{}, err
+	}
+	defer func() { _ = unlock() }()
+	st, err := s.ReadSync()
+	if err != nil {
+		return store.SyncState{}, errors.New("sync is not configured\nrun: ctx-bag sync init <folder>")
+	}
+	return st, nil
 }
 
 // listAttachable returns the attachable portable workspaces and any entry-level

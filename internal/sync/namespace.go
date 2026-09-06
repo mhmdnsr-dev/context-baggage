@@ -57,7 +57,14 @@ func IsAttachable(t store.WorkspaceIdentity) bool {
 // authoritative v2 namespace, plus entry-level warnings. It is strictly
 // read-only. Directory IDs are validated against workspace.yaml IDs.
 func ListPortableWorkspaces(folder string) ([]store.PortableWorkspace, []string, error) {
-	wsDir := filepath.Join(folder, exportDirV2, "workspaces")
+	return ListPortableWorkspacesFromRoot(filepath.Join(folder, exportDirV2))
+}
+
+// ListPortableWorkspacesFromRoot lists portable workspaces from an export-v2
+// root that directly contains a workspaces directory, as used by a materialized
+// managed REMOTE snapshot. It is strictly read-only.
+func ListPortableWorkspacesFromRoot(root string) ([]store.PortableWorkspace, []string, error) {
+	wsDir := filepath.Join(root, "workspaces")
 	entries, err := os.ReadDir(wsDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
