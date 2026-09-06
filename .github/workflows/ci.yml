@@ -78,7 +78,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-latest
+          - macos-15-intel
           - windows-latest
 
     steps:
